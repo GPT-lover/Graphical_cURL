@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { statusClass } from '../lib/http.js'
 
 // Reason phrases for the common status codes. Anything not listed just shows the
 // number (that's fine - the requirement is only that a 404 shows "404").
@@ -25,12 +26,6 @@ const REASON_PHRASE = {
   502: 'Bad Gateway',
   503: 'Service Unavailable',
   504: 'Gateway Timeout',
-}
-
-function statusClass(code) {
-  if (code >= 200 && code < 300) return 'ok'
-  if (code >= 300 && code < 400) return 'redirect'
-  return 'error' // 4xx + 5xx
 }
 
 /**

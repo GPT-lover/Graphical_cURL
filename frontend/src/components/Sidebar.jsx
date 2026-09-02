@@ -1,23 +1,25 @@
+import HistoryPanel from './HistoryPanel.jsx'
+
 /**
- * Left rail with two sections: History and Saved Requests.
- * Placeholders for now - History is filled in Phase 4, Saved in Phase 5.
- * Clicking an entry will call the hook's loadRequest() to populate the editor.
+ * Left rail: the functional History panel plus a Saved Requests placeholder
+ * (a later phase).
+ *
+ * Props: history = the object returned by useHistory(); onRestore(entry).
  */
-export default function Sidebar() {
+export default function Sidebar({ history, onRestore }) {
   return (
     <aside className="sidebar">
-      <div className="sidebar__section">
-        <h2 className="sidebar__title">History</h2>
-        <p className="sidebar__empty">
-          Sent requests will show up here (Phase 4).
-        </p>
-      </div>
+      <HistoryPanel
+        entries={history.entries}
+        loadError={history.loadError}
+        onRestore={onRestore}
+        onDelete={history.remove}
+        onClear={history.clear}
+      />
 
       <div className="sidebar__section">
         <h2 className="sidebar__title">Saved Requests</h2>
-        <p className="sidebar__empty">
-          Requests you save will show up here (Phase 5).
-        </p>
+        <p className="sidebar__empty">Requests you save will show up here (later phase).</p>
       </div>
     </aside>
   )

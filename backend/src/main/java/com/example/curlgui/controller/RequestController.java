@@ -8,10 +8,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.curlgui.dto.ErrorResponseDto;
+import com.example.curlgui.dto.ExportCurlResponseDto;
 import com.example.curlgui.dto.ImportCurlRequestDto;
 import com.example.curlgui.dto.ParsedRequestDto;
 import com.example.curlgui.dto.SendRequestDto;
 import com.example.curlgui.dto.SendResponseDto;
+import com.example.curlgui.service.CurlGeneratorService;
 import com.example.curlgui.service.CurlParseException;
 import com.example.curlgui.service.CurlParserService;
 import com.example.curlgui.service.InvalidRequestException;
@@ -35,10 +37,14 @@ public class RequestController {
 
     private final RequestService requestService;
     private final CurlParserService curlParserService;
+    private final CurlGeneratorService curlGeneratorService;
 
-    public RequestController(RequestService requestService, CurlParserService curlParserService) {
+    public RequestController(RequestService requestService,
+                            CurlParserService curlParserService,
+                            CurlGeneratorService curlGeneratorService) {
         this.requestService = requestService;
         this.curlParserService = curlParserService;
+        this.curlGeneratorService = curlGeneratorService;
     }
 
     /** Perform the request the user built and return the response. */
@@ -82,6 +88,27 @@ public class RequestController {
             return ResponseEntity
                     .badRequest()
                     .body(new ErrorResponseDto(ex.getMessage(), null));
+        }
+    }
+
+    /**
+     * Generate a POSIX-shell cURL command from the request the GUI built. Pure
+     * text generation - the command is never executed here.
+     *
+     * <p>Reuses {@link SendRequestDto} as the input. Success -> HTTP 200 +
+     * {@link ExportCurlResponseDto}. Bad input (e.g. no URL) -> HTTP 400 +
+     * {@link ErrorResponseDto}. The generated command is not logged.
+     */
+    @PostMapping("/requests/export-curl")
+    public ResponseEntity<?> exportCurl(@RequestBody(required = false) SendRequestDto request) {
+        try {
+            String curl = curlGeneratorService.generate(request);
+            return ResponseEntity.ok(new ExportCurlResponseDto(curl));
+
+        } catch (InvalidRequestException ex) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(new ErrorResponseDto("Cannot export to cURL", ex.getMessage()));
         }
     }
 }

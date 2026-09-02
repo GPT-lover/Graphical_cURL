@@ -116,6 +116,14 @@ export function importCurl(curl) {
 }
 
 /**
+ * Ask the backend to generate a POSIX-shell cURL command from the current
+ * request. Returns { curl }. The command is generated as text only - never run.
+ */
+export function exportCurl(payload) {
+  return postJson('/api/requests/export-curl', payload)
+}
+
+/**
  * GET a JSON endpoint and return the parsed body.
  * Throws a plain Error on network failure or non-2xx status.
  */
@@ -134,7 +142,37 @@ export async function getJson(path) {
   return response.json()
 }
 
+/** Send a DELETE and resolve on success (2xx or 404 - already gone counts as done). */
+async function del(path) {
+  let response
+  try {
+    response = await fetch(`${BASE_URL}${path}`, { method: 'DELETE' })
+  } catch {
+    throw new ApiError('network', `Could not connect to the backend at ${BASE_URL}.`)
+  }
+  if (!response.ok && response.status !== 404) {
+    throw new ApiError('backend', `Delete failed (HTTP ${response.status}).`, null, response.status)
+  }
+}
+
 /** Convenience call for the Phase 1 handshake endpoint. */
 export function fetchHealth() {
   return getJson('/api/health')
+}
+
+// ---- Request history --------------------------------------------------
+
+/** GET /api/history - all history entries, newest first. */
+export function fetchHistory() {
+  return getJson('/api/history')
+}
+
+/** DELETE /api/history/{id} - remove one entry. */
+export function deleteHistoryEntry(id) {
+  return del(`/api/history/${id}`)
+}
+
+/** DELETE /api/history - remove every entry. */
+export function clearHistory() {
+  return del('/api/history')
 }

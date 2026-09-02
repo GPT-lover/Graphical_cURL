@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.example.curlgui.dto.CookieDto;
+import com.example.curlgui.dto.HeaderDto;
 
 /**
  * Decides the single {@code Cookie} header for an outgoing request, from the
@@ -49,6 +50,29 @@ final class CookieHeader {
      *                 values)
      */
     record Result(String value, List<String> warnings) {
+    }
+
+    /**
+     * The value of a header literally named {@code Cookie} (matched
+     * case-insensitively, name trimmed), or {@code null} if there is none. If
+     * several are present the last one wins - matching how {@code HttpRequest}
+     * headers and shells would behave. Used by both the request executor and the
+     * cURL exporter so they apply the same conflict policy.
+     */
+    static String extractManualCookieHeader(List<HeaderDto> headers) {
+        if (headers == null) {
+            return null;
+        }
+        String found = null;
+        for (HeaderDto header : headers) {
+            if (header == null || header.key() == null) {
+                continue;
+            }
+            if (header.key().trim().equalsIgnoreCase("Cookie")) {
+                found = header.value() == null ? "" : header.value();
+            }
+        }
+        return found;
     }
 
     static Result resolve(List<CookieDto> sectionCookies, String manualCookieHeader) {

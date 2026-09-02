@@ -54,9 +54,11 @@ public class RequestService {
             Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
     private final HttpClient httpClient;
+    private final RequestHistoryService historyService;
 
-    public RequestService(HttpClient httpClient) {
+    public RequestService(HttpClient httpClient, RequestHistoryService historyService) {
         this.httpClient = httpClient;
+        this.historyService = historyService;
     }
 
     /**
@@ -86,7 +88,18 @@ public class RequestService {
         HttpResponse<byte[]> httpResponse = send(httpRequest, uri);
         long durationMs = Math.round((System.nanoTime() - startNanos) / 1_000_000.0);
 
-        return toResponseDto(httpResponse, durationMs, warnings);
+        SendResponseDto response = toResponseDto(httpResponse, durationMs, warnings);
+
+        // Persist a (sanitised) history row. This must never break a successful
+        // request, so any failure here is swallowed and logged without values.
+        try {
+            historyService.record(dto, response);
+        } catch (Exception ex) {
+            log.warn("Request succeeded but its history entry could not be saved: {}",
+                    ex.getClass().getSimpleName());
+        }
+
+        return response;
     }
 
     // ------------------------------------------------------------------
@@ -174,7 +187,6 @@ public class RequestService {
      */
     private String addHeaders(HttpRequest.Builder builder, List<HeaderDto> headers,
                               List<String> warnings) {
-        String manualCookieHeader = null;
         if (headers == null) {
             return null;
         }
@@ -183,14 +195,10 @@ public class RequestService {
                 continue;
             }
             String name = header.key() == null ? "" : header.key().trim();
-            if (name.isEmpty()) {
-                continue; // half-typed row in the editor
+            if (name.isEmpty() || name.equalsIgnoreCase("Cookie")) {
+                continue; // blank row, or a Cookie header handled via CookieHeader
             }
             String value = header.value() == null ? "" : header.value();
-            if (name.equalsIgnoreCase("Cookie")) {
-                manualCookieHeader = value; // handled by applyCookies()
-                continue;
-            }
             try {
                 builder.header(name, value);
             } catch (IllegalArgumentException ex) {
@@ -198,7 +206,7 @@ public class RequestService {
                         + "and cannot be set by this client.");
             }
         }
-        return manualCookieHeader;
+        return CookieHeader.extractManualCookieHeader(headers);
     }
 
     /**

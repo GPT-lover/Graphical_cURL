@@ -161,6 +161,113 @@ code {
   line-height: 1.45;
 }
 
+/* ---- History panel -------------------------------------------------- */
+
+.history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.history__header .sidebar__title {
+  margin-bottom: 0;
+}
+
+.history {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.history-item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.history-item__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.history-item__open:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.history-item__top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.method {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.method--get { color: #4fb37f; }
+.method--post { color: var(--warn); }
+.method--put { color: var(--accent); }
+.method--patch { color: #b98cff; }
+.method--delete { color: var(--danger); }
+.method--head,
+.method--options { color: var(--text-muted); }
+
+.history-item__top .status-code {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0 0.3rem;
+  border: none;
+  background: none;
+}
+
+.history-item__url {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item__meta {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+}
+
+.history-item__delete {
+  width: 26px;
+  height: auto;
+  align-self: stretch;
+  font-size: 1rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.history-item:hover .history-item__delete,
+.history-item__delete:focus-visible {
+  opacity: 1;
+}
+
 /* ---- Backend status pill -------------------------------------------- */
 
 .status {
@@ -728,5 +835,36 @@ code {
 .modal__actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 0.6rem;
+}
+
+/* ---- Copy as cURL (export) --------------------------- */
+
+.copied-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ok);
+}
+
+.export-curl__text {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 0.85rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+.export-curl__status {
+  margin-right: auto;
+  color: var(--ok);
+  font-size: 0.82rem;
 }

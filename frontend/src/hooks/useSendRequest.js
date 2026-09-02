@@ -13,8 +13,11 @@ import { toRequestPayload } from '../lib/request.js'
  * Only one request runs at a time: `send` ignores calls made while one is
  * already in flight, and the Send button is also disabled - together that stops
  * duplicate requests from frantic clicking.
+ *
+ * `onSent` (optional) is called after a request completes successfully - used to
+ * refresh the History sidebar, since the backend saves history as part of /send.
  */
-export function useSendRequest() {
+export function useSendRequest(onSent) {
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
   const [isSending, setIsSending] = useState(false)
@@ -45,6 +48,8 @@ export function useSendRequest() {
     try {
       const data = await sendRequest(payload)
       setResult(data)
+      // The backend already stored this in history; tell the sidebar to reload.
+      onSent?.()
     } catch (err) {
       // err is an ApiError from client.js (or any unexpected Error - still safe).
       setError({ message: err.message, detail: err.detail ?? null })
@@ -52,7 +57,7 @@ export function useSendRequest() {
       inFlight.current = false
       setIsSending(false)
     }
-  }, [])
+  }, [onSent])
 
   return { result, error, isSending, send }
 }

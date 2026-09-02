@@ -15,6 +15,8 @@ import BodyEditor from './BodyEditor.jsx'
  *   onSend        - () called with the request when the user hits Send / Enter
  *   isSending     - true while a request is in flight (disables the button)
  *   onImportClick - () open the "Import cURL" dialog
+ *   onExport      - (request) generate + copy the request as a cURL command
+ *   exportCopied  - true briefly after a successful "Copy as cURL"
  */
 export default function RequestEditor({
   request,
@@ -22,6 +24,8 @@ export default function RequestEditor({
   onSend,
   isSending,
   onImportClick,
+  onExport,
+  exportCopied,
 }) {
   const {
     setMethod,
@@ -62,7 +66,14 @@ export default function RequestEditor({
         >
           {isSending ? 'Sending…' : 'Send'}
         </button>
+        <button type="button" className="btn" onClick={() => onExport(request)}>
+          Copy as cURL
+        </button>
       </div>
+
+      {exportCopied && (
+        <p className="copied-note">✓ cURL copied to clipboard</p>
+      )}
 
       <HeadersEditor
         headers={request.headers}
