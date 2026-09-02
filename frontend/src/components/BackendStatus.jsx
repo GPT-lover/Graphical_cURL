@@ -36,22 +36,25 @@ export default function BackendStatus() {
     }
   }, [])
 
+  // Compact pill for the top bar. Full detail is in the hover tooltip.
+  const label = {
+    loading: 'Backend: checking…',
+    ok: 'Backend: connected',
+    error: 'Backend: offline',
+  }[state]
+
+  const tooltip = {
+    loading: 'Contacting GET /api/health …',
+    ok: detail
+      ? `${detail.service} reported ${detail.status} at ${detail.timestamp}`
+      : 'Connected',
+    error: detail?.message ?? 'Not reachable',
+  }[state]
+
   return (
-    <div className={`status status--${state}`}>
-      {state === 'loading' && <span>Checking backend…</span>}
-
-      {state === 'ok' && (
-        <span>
-          ● Backend connected — <code>{detail.service}</code> reported{' '}
-          <strong>{detail.status}</strong> at {detail.timestamp}
-        </span>
-      )}
-
-      {state === 'error' && (
-        <span>
-          ● Backend not reachable — {detail.message}
-        </span>
-      )}
+    <div className={`status status--${state}`} title={tooltip}>
+      <span className="status__dot" aria-hidden="true" />
+      <span>{label}</span>
     </div>
   )
 }

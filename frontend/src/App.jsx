@@ -1,24 +1,38 @@
+import Sidebar from './components/Sidebar.jsx'
+import RequestEditor from './components/RequestEditor.jsx'
+import ResponsePanel from './components/ResponsePanel.jsx'
 import BackendStatus from './components/BackendStatus.jsx'
+import { useRequest } from './hooks/useRequest.js'
 
-// Phase 1 shell. The real layout (sidebar + request editor + response panel)
-// arrives in Phase 2. For now this page exists only to verify the two apps
-// can talk to each other.
+/**
+ * Top-level layout:
+ *
+ *   topbar:  brand ................................ backend status
+ *   body:    [ Sidebar ] [ RequestEditor + ResponsePanel ]
+ *
+ * The request state lives here (via useRequest) so that later phases can let the
+ * Sidebar load a request into the editor. For now only RequestEditor uses it.
+ */
 export default function App() {
+  const { request, ...actions } = useRequest()
+
   return (
     <div className="app">
-      <header className="app__header">
-        <h1>cURL GUI</h1>
-        <p className="app__subtitle">Phase 1 — project skeleton</p>
+      <header className="app__topbar">
+        <div className="app__brand">
+          <span className="app__logo">cURL GUI</span>
+          <span className="app__tag">HTTP request builder</span>
+        </div>
+        <BackendStatus />
       </header>
 
-      <main className="app__main">
-        <BackendStatus />
-
-        <p className="app__hint">
-          If the banner above is green, the React frontend successfully reached
-          the Spring Boot backend. The request editor comes next (Phase 2).
-        </p>
-      </main>
+      <div className="app__body">
+        <Sidebar />
+        <main className="app__main">
+          <RequestEditor request={request} actions={actions} />
+          <ResponsePanel />
+        </main>
+      </div>
     </div>
   )
 }
