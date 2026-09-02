@@ -63,7 +63,31 @@ async function postJson(path, payload) {
   }
 
   if (!response.ok) {
-    // Our backend's ErrorResponseDto is { error, message }.
+    // Spring's *built-in* error body looks like
+    //   { timestamp, status, error, path }
+    // and means the request never reached our controller at all - almost always
+    // because the running backend is an older build without this endpoint. Say
+    // that plainly instead of surfacing a bare "Not Found".
+    const isFrameworkError =
+      data && data.timestamp !== undefined && data.path !== undefined
+
+    if (isFrameworkError) {
+      const hint =
+        response.status === 404
+          ? `The running backend has no "${path}" endpoint. Stop it and run ` +
+            `"gradlew.bat bootRun" again so it compiles the latest code.`
+          : `The backend rejected the request before the app code ran ` +
+            `(${data.error ?? response.status}).`
+      throw new ApiError(
+        'backend',
+        `Backend responded ${response.status} for ${path}`,
+        hint,
+        response.status,
+      )
+    }
+
+    // Our own ErrorResponseDto: { error, message } - `error` is a message meant
+    // to be shown to the user.
     const message = data?.error ?? `Backend error (HTTP ${response.status}).`
     throw new ApiError('backend', message, data?.message ?? null, response.status)
   }

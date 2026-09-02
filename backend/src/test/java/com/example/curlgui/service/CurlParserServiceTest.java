@@ -219,4 +219,100 @@ class CurlParserServiceTest {
         assertEquals("POST", r.method());
         assertEquals("x=1", r.body());
     }
+
+    // --- --url option, any position ----------------------------------
+
+    @Test
+    void urlViaUrlOptionBeforeOtherArgs() {
+        ParsedRequestDto r =
+                parser.parse("curl --url 'https://example.com' -H 'Accept: application/json'");
+        assertEquals("GET", r.method());
+        assertEquals("https://example.com", r.url());
+    }
+
+    @Test
+    void urlViaUrlOptionAfterOtherArgs() {
+        ParsedRequestDto r = parser.parse(
+                "curl -H 'Accept: x' --data-raw '{\"a\":1}' --url 'https://example.com'");
+        assertEquals("POST", r.method());
+        assertEquals("https://example.com", r.url());
+        assertEquals("{\"a\":1}", r.body());
+    }
+
+    @Test
+    void crlfLineContinuationsFromWindowsClipboard() {
+        String cmd = "curl --url 'https://api.example.com/x' \\\r\n"
+                + "  -H 'accept: application/json' \\\r\n"
+                + "  --data-raw '{\"rating\":7}'";
+        ParsedRequestDto r = parser.parse(cmd);
+        assertEquals("POST", r.method());
+        assertEquals("https://api.example.com/x", r.url());
+        assertEquals("{\"rating\":7}", r.body());
+    }
+
+    /**
+     * The realistic Chrome "Copy as cURL" command from the phase brief, with safe
+     * fake credentials. Must import as POST + the exact URL + the exact body, and
+     * parse every header and cookie.
+     */
+    @Test
+    void fullChromeStyleFakeCommandImportsCorrectly() {
+        String cmd = String.join("\n",
+                "curl --url 'https://api.example.com/auth/releases/test123/rate' \\",
+                "  -H 'accept: application/json, text/plain, */*' \\",
+                "  -H 'accept-language: en-US,en;q=0.9' \\",
+                "  -H 'cache-control: no-cache' \\",
+                "  -H 'content-type: application/json' \\",
+                "  -b 'auth=FAKE_AUTH_TOKEN; refresh=FAKE_REFRESH_TOKEN; cf_clearance=FAKE_CLEARANCE' \\",
+                "  -H 'origin: https://example.com' \\",
+                "  -H 'pragma: no-cache' \\",
+                "  -H 'priority: u=1, i' \\",
+                "  -H 'referer: https://example.com/' \\",
+                "  -H 'sec-ch-ua: \"Not=A?Brand\";v=\"99\", \"Google Chrome\";v=\"151\", \"Chromium\";v=\"151\"' \\",
+                "  -H 'sec-ch-ua-mobile: ?0' \\",
+                "  -H 'sec-ch-ua-platform: \"Windows\"' \\",
+                "  -H 'sec-fetch-dest: empty' \\",
+                "  -H 'sec-fetch-mode: cors' \\",
+                "  -H 'sec-fetch-site: same-site' \\",
+                "  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        + "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36' \\",
+                "  --data-raw '{\"rating\":7}'");
+
+        ParsedRequestDto r = parser.parse(cmd);
+
+        assertEquals("POST", r.method());
+        assertEquals("https://api.example.com/auth/releases/test123/rate", r.url());
+        assertEquals("{\"rating\":7}", r.body());
+
+        assertEquals(15, r.headers().size());
+        assertTrue(r.headers().contains(
+                new HeaderDto("accept", "application/json, text/plain, */*")));
+        assertTrue(r.headers().contains(new HeaderDto("priority", "u=1, i")));
+        // inner double quotes preserved in the value
+        assertTrue(r.headers().contains(new HeaderDto("sec-ch-ua",
+                "\"Not=A?Brand\";v=\"99\", \"Google Chrome\";v=\"151\", \"Chromium\";v=\"151\"")));
+        assertTrue(r.headers().contains(new HeaderDto("sec-ch-ua-platform", "\"Windows\"")));
+
+        assertEquals(List.of(
+                new CookieDto("auth", "FAKE_AUTH_TOKEN"),
+                new CookieDto("refresh", "FAKE_REFRESH_TOKEN"),
+                new CookieDto("cf_clearance", "FAKE_CLEARANCE")), r.cookies());
+
+        assertTrue(r.warnings().isEmpty(), "unexpected warnings: " + r.warnings());
+    }
+
+    /** Same command with the URL as a bare positional arg instead of --url. */
+    @Test
+    void fullChromeStyleWithoutUrlOption() {
+        String cmd = String.join("\n",
+                "curl 'https://api.example.com/auth/releases/test123/rate' \\",
+                "  -H 'content-type: application/json' \\",
+                "  -b 'auth=FAKE_AUTH_TOKEN; refresh=FAKE_REFRESH_TOKEN' \\",
+                "  --data-raw '{\"rating\":7}'");
+        ParsedRequestDto r = parser.parse(cmd);
+        assertEquals("POST", r.method());
+        assertEquals("https://api.example.com/auth/releases/test123/rate", r.url());
+        assertEquals("{\"rating\":7}", r.body());
+        assertEquals(2, r.cookies().size());
+    }
 }
