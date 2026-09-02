@@ -343,6 +343,16 @@ code {
   box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.35);
 }
 
+.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.btn--primary:disabled:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -386,7 +396,7 @@ code {
   background: rgba(224, 108, 108, 0.12);
 }
 
-/* ---- Response placeholder ---------------------------------- */
+/* ---- Response panel -------------------------------------- */
 
 .response-panel__placeholder {
   border: 1px dashed var(--border-strong);
@@ -395,6 +405,180 @@ code {
   text-align: center;
   color: var(--text-faint);
   font-size: 0.85rem;
+}
+
+.response-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.response-error {
+  border: 1px solid rgba(224, 108, 108, 0.4);
+  background: rgba(224, 108, 108, 0.1);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  color: #f0b3b3;
+}
+
+.response-error strong {
+  color: var(--danger);
+}
+
+.response-error__detail {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.response-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.status-code {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+
+.status-code--ok {
+  color: var(--ok);
+  background: rgba(63, 179, 127, 0.12);
+  border-color: rgba(63, 179, 127, 0.4);
+}
+
+.status-code--redirect {
+  color: var(--accent);
+  background: rgba(79, 140, 255, 0.12);
+  border-color: rgba(79, 140, 255, 0.4);
+}
+
+.status-code--error {
+  color: var(--danger);
+  background: rgba(224, 108, 108, 0.12);
+  border-color: rgba(224, 108, 108, 0.4);
+}
+
+.response-time {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.response-warnings {
+  margin: 0 0 0.9rem;
+  padding: 0.6rem 0.9rem 0.6rem 1.9rem;
+  border: 1px solid rgba(216, 162, 74, 0.35);
+  background: rgba(216, 162, 74, 0.1);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
+  font-size: 0.82rem;
+}
+
+.response-section {
+  margin-top: 1rem;
+}
+
+.response-section__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.tag {
+  font-family: var(--font-ui);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: rgba(79, 140, 255, 0.12);
+  border: 1px solid rgba(79, 140, 255, 0.35);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+}
+
+.kv-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.kv-list__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 240px) 1fr;
+  gap: 0.75rem;
+  padding: 0.4rem 0.7rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.kv-list__row:last-child {
+  border-bottom: none;
+}
+
+.kv-list__key {
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.kv-list__value {
+  color: var(--text);
+  word-break: break-word;
+}
+
+.kv-list__empty {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+}
+
+.response-body {
+  margin: 0;
+  max-height: 460px;
+  overflow: auto;
+  padding: 0.85rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--text);
 }
 
 /* ---- Responsive ----------------------------------------- */

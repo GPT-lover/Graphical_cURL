@@ -1,18 +1,88 @@
 // Tiny wrapper around fetch() so every component talks to the backend the same
-// way. As the API grows (Phase 3+) new functions get added here rather than
-// scattering fetch() calls through components.
+// way. As the API grows, new functions get added here rather than scattering
+// fetch() calls through components.
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
 /**
+ * One error type for everything that can go wrong talking to our backend, so the
+ * UI can show a useful message instead of crashing. `kind` lets the UI phrase it:
+ *
+ *   'network'   - the backend couldn't be reached at all (not running, wrong
+ *                 port, CORS blocked). fetch() itself rejected.
+ *   'backend'   - the backend answered with a 4xx/5xx and an ErrorResponseDto
+ *                 (bad URL, DNS failure, timeout contacting the target...).
+ *   'malformed' - the backend answered but the body wasn't the JSON we expected.
+ */
+export class ApiError extends Error {
+  constructor(kind, message, detail = null, status = null) {
+    super(message)
+    this.name = 'ApiError'
+    this.kind = kind
+    this.detail = detail
+    this.status = status
+  }
+}
+
+/**
+ * POST the request the user built to the backend, which performs the actual
+ * outgoing HTTP call and returns a SendResponseDto:
+ *   { statusCode, headers, body, durationMs, warnings }
+ *
+ * A 404/500 from the *target* server is a normal success here - it comes back
+ * inside that object. This function only throws for failures of *our* pipeline.
+ */
+export async function sendRequest(payload) {
+  let response
+  try {
+    response = await fetch(`${BASE_URL}/api/requests/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    throw new ApiError(
+      'network',
+      `Could not connect to the backend at ${BASE_URL}.`,
+      'Make sure the Spring Boot backend is running on port 8080 (./gradlew bootRun).',
+    )
+  }
+
+  // Read the body once, as text, so we can handle "not JSON" without a second
+  // exception.
+  const raw = await response.text()
+  let data = null
+  if (raw) {
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      throw new ApiError(
+        'malformed',
+        `The backend returned a response that isn't valid JSON (HTTP ${response.status}).`,
+        raw.slice(0, 500),
+        response.status,
+      )
+    }
+  }
+
+  if (!response.ok) {
+    // Our backend's ErrorResponseDto is { error, message }.
+    const message = data?.error ?? `Backend error (HTTP ${response.status}).`
+    throw new ApiError('backend', message, data?.message ?? null, response.status)
+  }
+
+  return data
+}
+
+/**
  * GET a JSON endpoint and return the parsed body.
- * Throws an Error with a useful message on network failure or non-2xx status.
+ * Throws a plain Error on network failure or non-2xx status.
  */
 export async function getJson(path) {
   let response
   try {
     response = await fetch(`${BASE_URL}${path}`)
-  } catch (cause) {
+  } catch {
     // fetch() only rejects on network-level problems (server down, DNS, CORS).
     throw new Error(`Could not reach the backend at ${BASE_URL}. Is it running?`)
   }

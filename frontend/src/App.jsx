@@ -3,6 +3,7 @@ import RequestEditor from './components/RequestEditor.jsx'
 import ResponsePanel from './components/ResponsePanel.jsx'
 import BackendStatus from './components/BackendStatus.jsx'
 import { useRequest } from './hooks/useRequest.js'
+import { useSendRequest } from './hooks/useSendRequest.js'
 
 /**
  * Top-level layout:
@@ -10,11 +11,16 @@ import { useRequest } from './hooks/useRequest.js'
  *   topbar:  brand ................................ backend status
  *   body:    [ Sidebar ] [ RequestEditor + ResponsePanel ]
  *
- * The request state lives here (via useRequest) so that later phases can let the
- * Sidebar load a request into the editor. For now only RequestEditor uses it.
+ * Two hooks own the state:
+ *   useRequest      - the request being edited (method/url/headers/body)
+ *   useSendRequest  - sending it and the result/error/loading state
+ *
+ * App holds both so RequestEditor (writes the request, triggers send) and
+ * ResponsePanel (reads the result) can stay siblings.
  */
 export default function App() {
   const { request, ...actions } = useRequest()
+  const { result, error, isSending, send } = useSendRequest()
 
   return (
     <div className="app">
@@ -29,8 +35,13 @@ export default function App() {
       <div className="app__body">
         <Sidebar />
         <main className="app__main">
-          <RequestEditor request={request} actions={actions} />
-          <ResponsePanel />
+          <RequestEditor
+            request={request}
+            actions={actions}
+            onSend={send}
+            isSending={isSending}
+          />
+          <ResponsePanel result={result} error={error} isSending={isSending} />
         </main>
       </div>
     </div>
