@@ -1,0 +1,210 @@
+name: Release
+
+# Cut a release by pushing a version tag:
+#
+#   git tag v1.0.0
+#   git push origin v1.0.0
+#
+# This workflow then, with no further manual steps:
+#   1. checks the tag matches package.json "version"
+#   2. builds the Windows x64 NSIS installer          (windows-latest)
+#   3. builds the macOS x64 + arm64 DMGs              (macos-13 + macos-14)
+#      - each on a NATIVE runner so its jlink Java runtime is the right arch
+#   4. creates/updates the GitHub Release for the tag and attaches the installers
+#
+# Nothing here is signed/notarized (no Apple Developer ID configured). See the
+# README for what adding that would involve.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only the release job needs write access; everything else is read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '22'
+  JAVA_VERSION: '25' # full Temurin JDK - build-jre.mjs needs jlink + jdeps.
+  #                    Project compiles to Java 21 bytecode (backend/build.gradle
+  #                    sourceCompatibility/targetCompatibility = 21); that is
+  #                    unchanged - only the build/runtime JDK is 25, as locally.
+
+jobs:
+  # ---------------------------------------------------------------------------
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          echo "Git tag      : v$tag"
+          echo "package.json : $pkg"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::Git tag v$tag does not match package.json version $pkg. Set \"version\" in package.json to $tag, commit, re-tag, and push the tag again."
+            exit 1
+          fi
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  build-windows:
+    needs: check-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      # The exact pipeline used locally by `npm run electron:build:win`:
+      #   build:frontend  ->  build:backend (gradlew.bat clean bootJar)  ->  build:jre
+      - name: Production build pipeline (frontend + bootJar + jlink)
+        run: npm run prepackage
+
+      - name: Package Windows installer
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Verify the .exe was produced
+        shell: bash
+        run: |
+          ls -la release
+          test -n "$(ls release/*.exe 2>/dev/null)" || { echo "::error::electron-builder did not produce release/*.exe"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: release/*.exe
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  build-macos:
+    needs: check-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14 # Apple Silicon
+            required: true
+          - arch: x64
+            runner: macos-13 # Intel. GitHub is winding these down; if this
+            #                   runner disappears, delete this matrix entry to
+            #                   ship arm64-only (the release still succeeds).
+            required: false
+    runs-on: ${{ matrix.runner }}
+    # arm64 must pass; the Intel leg is allowed to fail without blocking release.
+    continue-on-error: ${{ !matrix.required }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      # Same pipeline as Windows: build:frontend -> build:backend -> build:jre.
+      # build:backend now uses electron/scripts/build-backend.mjs, which picks
+      # ./gradlew on macOS, so build:jre gets a NATIVE (arm64 or x64) runtime.
+      - name: Production build pipeline (frontend + bootJar + jlink, native ${{ matrix.arch }})
+        run: npm run prepackage
+
+      - name: Package macOS ${{ matrix.arch }} DMG (unsigned)
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+
+      - name: Verify the .dmg was produced
+        run: |
+          ls -la release
+          test -n "$(ls release/*.dmg 2>/dev/null)" || { echo "::error::electron-builder did not produce release/*.dmg"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-macos-${{ matrix.arch }}
+          path: release/*.dmg
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  release:
+    needs: [check-version, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the Release and upload assets
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: installer-*
+          merge-multiple: true
+
+      - name: Show collected assets
+        run: ls -la dist
+
+      # Uses the pre-installed GitHub CLI + the automatic GITHUB_TOKEN. No PAT,
+      # no third-party action. Creates the Release for this tag if it does not
+      # exist yet, otherwise adds/overwrites the installers on it.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          assets=(dist/*.exe dist/*.dmg)
+          echo "Assets: ${assets[*]}"
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::No .exe/.dmg installers were produced."
+            exit 1
+          fi
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME exists - uploading assets."
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            echo "Creating release $GITHUB_REF_NAME."
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --title "Graphical cURL ${{ needs.check-version.outputs.version }}" \
+              --generate-notes $prerelease
+          fi

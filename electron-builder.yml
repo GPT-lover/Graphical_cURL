@@ -1,8 +1,17 @@
-# electron-builder configuration - Windows x64 desktop installer.
+# electron-builder configuration.
 #
-# macOS / Linux targets are intentionally omitted for now. The structure below
-# (a `win` block) leaves room to add `mac:` / `linux:` blocks later without
-# reworking anything else.
+#   Windows x64  -> NSIS installer   (Graphical-cURL-Setup-<version>.exe)
+#   macOS x64    -> DMG              (Graphical-cURL-<version>-x64.dmg)
+#   macOS arm64  -> DMG              (Graphical-cURL-<version>-arm64.dmg)
+#
+# The macOS builds are UNSIGNED for now (no Apple Developer ID configured). See
+# .github/workflows/release.yml and the README for what signing/notarization
+# would add. Linux is still intentionally omitted.
+#
+# The bundled Java runtime (backend/build/jre) is produced by
+# electron/scripts/build-jre.mjs with `jlink` and is PLATFORM-SPECIFIC: it must
+# be regenerated on each target OS/arch. The release workflow does exactly that -
+# one runner per OS/arch, each running `build:jre` natively before packaging.
 
 appId: com.example.graphicalcurl
 productName: Graphical cURL
@@ -66,3 +75,15 @@ mac:
         - x64
         - arm64
   category: public.app-category.developer-tools
+  # No Apple Developer ID yet -> build an UNSIGNED .app. This makes the build
+  # succeed on CI without any secrets. Downloaded copies will need a one-time
+  # Gatekeeper override on the end user's Mac (documented in the README).
+  identity: null
+  hardenedRuntime: false
+  # Graphical cURL-1.0.0.dmg -> Graphical-cURL-1.0.0-<arch>.dmg
+  artifactName: Graphical-cURL-${version}-${arch}.${ext}
+
+dmg:
+  artifactName: Graphical-cURL-${version}-${arch}.${ext}
+  # Do not try to codesign the .dmg either (no identity available).
+  sign: false

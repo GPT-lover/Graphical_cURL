@@ -43,8 +43,11 @@ Electron (main process)
    ├── opens the window and loads the built React app
    └── on exit, terminates the backend process it started
 
-SQLite lives in  %APPDATA%\Graphical cURL\graphical-curl.db   (user-writable)
-Logs live in     %APPDATA%\Graphical cURL\logs\
+SQLite / logs live in a per-user, writable app-data directory (never inside the
+installed app):
+   Windows  %APPDATA%\Graphical cURL\graphical-curl.db   +  \logs\
+   macOS    ~/Library/Application Support/Graphical cURL/graphical-curl.db
+            ~/Library/Logs/Graphical cURL/
 ```
 
 ### Commands
@@ -54,17 +57,45 @@ Logs live in     %APPDATA%\Graphical cURL\logs\
 | Browser dev — frontend | `cd frontend && npm run dev` (or `npm run dev` at repo root) | unchanged; http://localhost:5173 |
 | Browser dev — backend | `cd backend && gradlew.bat bootRun` | unchanged; http://localhost:8080 |
 | Desktop dev | `npm run electron:dev` | starts backend + Vite + Electron together |
-| Build the installer | `npm run electron:build` | frontend build → `bootJar` → `jlink` → electron-builder |
+| Build the Windows installer | `npm run electron:build:win` | `vite build` → `bootJar` → `jlink` → electron-builder (NSIS) |
+| Build the macOS DMGs | `npm run electron:build:mac` | run on a Mac; see note below |
 | Backend tests | `npm run test:backend` | = `cd backend && gradlew.bat test` |
 
-The installer is written to **`release/Graphical-cURL-Setup-<version>.exe`**
-(version comes from the root `package.json`). Prerequisites for *building* the
-installer: Node 22 and a full **JDK 25** (with `jlink`) on `JAVA_HOME`. The
-*end user* needs neither Java nor Node — both are bundled.
+Prerequisites for *building*: Node 22 and a full **JDK 25** (with `jlink`, on
+`JAVA_HOME`). The project still compiles to **Java 21 bytecode**
+(`backend/build.gradle`) — only the build/runtime JDK is 25. The *end user* needs
+neither Java nor Node — both are bundled.
 
-See the Phase 12 notes for the full design (dynamic port, `jlink` module set,
-database path, shutdown handling, CI workflow at
-`.github/workflows/build-desktop.yml`).
+The bundled Java runtime (`backend/build/jre`, produced by `jlink`) is
+**platform-specific**. `npm run electron:build:mac` on your Mac produces a
+correct DMG only for *that* Mac's architecture; the other arch's DMG would carry
+the wrong `java`. Use CI (below) for a proper dual-arch release, or pass a single
+matching arch locally (`npx electron-builder --mac --arm64`).
+
+### Releases (GitHub Actions)
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
+Windows installer (`windows-latest`) and the macOS x64 + arm64 DMGs
+(`macos-13` + `macos-14`, each with a natively-built `jlink` runtime), then
+creates/updates the GitHub Release for that tag and attaches:
+
+```
+Graphical-cURL-Setup-<version>.exe
+Graphical-cURL-<version>-x64.dmg
+Graphical-cURL-<version>-arm64.dmg
+```
+
+The tag must match `version` in the root `package.json` (the workflow fails fast
+if not). To cut `1.0.1`: bump `package.json` to `1.0.1`, commit, then
+`git tag v1.0.1 && git push origin v1.0.1`.
+
+`.github/workflows/build-desktop.yml` still runs a Windows-only installer build
+on pushes to `main` (uploaded as a workflow artifact, no Release).
+
+**macOS builds are unsigned / not notarized.** A downloaded DMG triggers
+Gatekeeper; the user right-clicks the app → **Open** once, or runs
+`xattr -dr com.apple.quarantine "/Applications/Graphical cURL.app"`. Adding an
+Apple Developer ID later removes this (see the release notes).
 
 ## Build status of this phase
 
