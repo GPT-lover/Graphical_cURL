@@ -22,12 +22,18 @@ import java.util.List;
  * {@code headers}, {@code cookies} and {@code body} may be {@code null} - the
  * service handles that. {@code cookies} are combined into a single
  * {@code Cookie: a=1; b=2} header when the request is sent.
+ *
+ * {@code environmentId} (optional) tells the backend which environment's
+ * variables to substitute into {@code {{PLACEHOLDERS}}} before sending. The
+ * frontend sends its currently active environment id here. Substitution happens
+ * on a copy - this DTO (and therefore Request History) keeps the placeholders.
  */
 public record SendRequestDto(
         String method,
         String url,
         List<HeaderDto> headers,
         List<CookieDto> cookies,
-        String body
+        String body,
+        Long environmentId
 ) {
 }

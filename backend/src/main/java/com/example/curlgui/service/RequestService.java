@@ -55,15 +55,30 @@ public class RequestService {
 
     private final HttpClient httpClient;
     private final RequestHistoryService historyService;
+    private final EnvironmentVariableService environmentVariableService;
+    private final EnvironmentVariableResolver variableResolver;
 
-    public RequestService(HttpClient httpClient, RequestHistoryService historyService) {
+    public RequestService(HttpClient httpClient,
+                          RequestHistoryService historyService,
+                          EnvironmentVariableService environmentVariableService,
+                          EnvironmentVariableResolver variableResolver) {
         this.httpClient = httpClient;
         this.historyService = historyService;
+        this.environmentVariableService = environmentVariableService;
+        this.variableResolver = variableResolver;
     }
 
     /**
-     * Validate the DTO, build an {@link HttpRequest}, send it, and convert the
-     * response. Throws {@link InvalidRequestException} for bad input and
+     * Resolve {@code {{variables}}}, validate, build an {@link HttpRequest}, send
+     * it, and convert the response.
+     *
+     * <p>Substitution happens on a <b>temporary copy</b> ({@code resolved}). The
+     * original {@code dto} keeps its placeholders and is what Request History
+     * records, so no resolved secret is ever persisted. If any placeholder can't
+     * be resolved, {@link UnresolvedVariableException} is thrown here - before
+     * {@code HttpClient} is touched - and nothing is sent.
+     *
+     * <p>Throws {@link InvalidRequestException} for bad input and
      * {@link RequestExecutionException} for network failures - both handled by
      * the controller.
      */
@@ -72,9 +87,14 @@ public class RequestService {
             throw new InvalidRequestException("Request body is missing");
         }
 
-        String method = normaliseMethod(dto.method());
-        URI uri = parseAndValidateUrl(dto.url());
-        String body = dto.body() == null ? "" : dto.body();
+        Map<String, String> variables =
+                environmentVariableService.variablesFor(dto.environmentId());
+        SendRequestDto resolved = variableResolver.resolveRequest(dto, variables);
+        // From here down, `resolved` is what is actually sent.
+
+        String method = normaliseMethod(resolved.method());
+        URI uri = parseAndValidateUrl(resolved.url());
+        String body = resolved.body() == null ? "" : resolved.body();
 
         // Log host only - never the full URL (query strings can carry tokens),
         // never headers, never the body.
@@ -82,7 +102,7 @@ public class RequestService {
 
         List<String> warnings = new ArrayList<>();
         HttpRequest httpRequest =
-                buildHttpRequest(method, uri, body, dto.headers(), dto.cookies(), warnings);
+                buildHttpRequest(method, uri, body, resolved.headers(), resolved.cookies(), warnings);
 
         long startNanos = System.nanoTime();
         HttpResponse<byte[]> httpResponse = send(httpRequest, uri);
@@ -90,8 +110,9 @@ public class RequestService {
 
         SendResponseDto response = toResponseDto(httpResponse, durationMs, warnings);
 
-        // Persist a (sanitised) history row. This must never break a successful
-        // request, so any failure here is swallowed and logged without values.
+        // Persist a (sanitised) history row from the ORIGINAL dto (placeholders
+        // intact). This must never break a successful request, so any failure
+        // here is swallowed and logged without values.
         try {
             historyService.record(dto, response);
         } catch (Exception ex) {

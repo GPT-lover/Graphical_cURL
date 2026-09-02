@@ -23,7 +23,7 @@ class CurlGeneratorServiceTest {
 
     private static SendRequestDto req(String method, String url,
                                       List<HeaderDto> headers, List<CookieDto> cookies, String body) {
-        return new SendRequestDto(method, url, headers, cookies, body);
+        return new SendRequestDto(method, url, headers, cookies, body, null);
     }
 
     private static int countOccurrences(String haystack, String needle) {

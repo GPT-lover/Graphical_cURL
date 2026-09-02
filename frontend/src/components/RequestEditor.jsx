@@ -3,6 +3,7 @@ import UrlBar from './UrlBar.jsx'
 import HeadersEditor from './HeadersEditor.jsx'
 import CookiesEditor from './CookiesEditor.jsx'
 import BodyEditor from './BodyEditor.jsx'
+import EnvironmentBar from './EnvironmentBar.jsx'
 
 /**
  * Assembles the request editor from its sub-components and wires each one to the
@@ -21,6 +22,8 @@ import BodyEditor from './BodyEditor.jsx'
  *   onSave           - () open the Save dialog (create a new saved request)
  *   onUpdate         - () overwrite the currently loaded saved request
  *   onSaveAs         - () open the Save dialog to create a copy
+ *   environments / activeEnvironmentId / environmentsError / onEnvironmentChange /
+ *     onManageEnvironments - passed straight through to <EnvironmentBar>
  */
 export default function RequestEditor({
   request,
@@ -35,6 +38,11 @@ export default function RequestEditor({
   onSave,
   onUpdate,
   onSaveAs,
+  environments,
+  activeEnvironmentId,
+  environmentsError,
+  onEnvironmentChange,
+  onManageEnvironments,
 }) {
   const {
     setMethod,
@@ -58,6 +66,14 @@ export default function RequestEditor({
 
   return (
     <div className="request-editor">
+      <EnvironmentBar
+        environments={environments}
+        activeId={activeEnvironmentId}
+        loadError={environmentsError}
+        onChange={onEnvironmentChange}
+        onManage={onManageEnvironments}
+      />
+
       <div className="editor-toolbar">
         <div className="editor-toolbar__left">
           <button type="button" className="btn" onClick={onNewRequest}>

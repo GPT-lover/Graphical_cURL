@@ -11,6 +11,8 @@ import { useSendRequest } from './hooks/useSendRequest.js'
 import { useCurlExport } from './hooks/useCurlExport.js'
 import { useHistory } from './hooks/useHistory.js'
 import { useCollections } from './hooks/useCollections.js'
+import { useEnvironments } from './hooks/useEnvironments.js'
+import EnvironmentModal from './components/EnvironmentModal.jsx'
 import { toRequestPayload } from './lib/request.js'
 import {
   createCollection,
@@ -38,12 +40,20 @@ export default function App() {
   const { request, loadRequest, resetRequest, ...actions } = useRequest()
   const history = useHistory()
   const collections = useCollections()
+  const environments = useEnvironments()
   const { result, error, isSending, send } = useSendRequest(history.refresh)
   const exportCurl = useCurlExport()
 
   const [importOpen, setImportOpen] = useState(false)
+  const [envModalOpen, setEnvModalOpen] = useState(false)
   const [saved, setSaved] = useState(null)
   const [saveModal, setSaveModal] = useState({ open: false, mode: 'save' })
+
+  // Send with the active environment so the backend can resolve {{variables}}.
+  const handleSend = useCallback(
+    (req) => send(req, environments.activeEnvironmentId),
+    [send, environments.activeEnvironmentId],
+  )
 
   // --- helpers ------------------------------------------------------
 
@@ -217,7 +227,7 @@ export default function App() {
           <RequestEditor
             request={request}
             actions={actions}
-            onSend={send}
+            onSend={handleSend}
             isSending={isSending}
             onImportClick={() => setImportOpen(true)}
             onExport={exportCurl.run}
@@ -227,6 +237,11 @@ export default function App() {
             onSave={() => setSaveModal({ open: true, mode: 'save' })}
             onUpdate={handleUpdate}
             onSaveAs={() => setSaveModal({ open: true, mode: 'saveAs' })}
+            environments={environments.environments}
+            activeEnvironmentId={environments.activeEnvironmentId}
+            environmentsError={environments.loadError}
+            onEnvironmentChange={environments.setActiveEnvironmentId}
+            onManageEnvironments={() => setEnvModalOpen(true)}
           />
           <ResponsePanel result={result} error={error} isSending={isSending} />
         </main>
@@ -257,6 +272,14 @@ export default function App() {
         initialCollectionId={defaultCollectionId}
         onSubmit={handleSaveSubmit}
         onClose={() => setSaveModal({ open: false, mode: 'save' })}
+      />
+
+      <EnvironmentModal
+        open={envModalOpen}
+        onClose={() => setEnvModalOpen(false)}
+        environments={environments.environments}
+        activeId={environments.activeEnvironmentId}
+        onChanged={environments.refresh}
       />
     </div>
   )

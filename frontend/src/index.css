@@ -512,9 +512,86 @@ code {
   padding: 0.2rem 0.5rem;
 }
 
+/* ---- Environment bar ------------------------------------------- */
+
+.env-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.env-bar__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.env-bar__select {
+  font-family: var(--font-ui);
+  min-width: 150px;
+  padding-block: 0.35rem;
+}
+
+/* ---- Manage Environments dialog ------------------------------- */
+
+.env-modal__pick {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.env-modal__pick .input {
+  flex: 1;
+  min-width: 140px;
+  font-family: var(--font-ui);
+}
+
+.env-vars__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto;
+  gap: 0.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  padding: 0 0.1rem;
+}
+
+.env-vars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.env-var-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.env-var-row .input {
+  width: 100%;
+}
+
+.env-var-row__value {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.env-var-row__value .input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ---- Editor toolbar (New Request / Import / Save controls) ------ */
 
 .editor-toolbar {
+  margin-top: 0.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;

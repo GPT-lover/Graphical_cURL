@@ -49,7 +49,7 @@ class RequestHistoryServiceTest {
     }
 
     private static SendRequestDto req(String method, String url, List<HeaderDto> headers, String body) {
-        return new SendRequestDto(method, url, headers, List.of(), body);
+        return new SendRequestDto(method, url, headers, List.of(), body, null);
     }
 
     private static SendResponseDto resp(int status, long durationMs) {
@@ -148,7 +148,7 @@ class RequestHistoryServiceTest {
 
     @Test
     void nullHeadersAndBodyAreHandled() {
-        service.record(new SendRequestDto("GET", "https://example.com", null, null, null), resp(200, 1));
+        service.record(new SendRequestDto("GET", "https://example.com", null, null, null, null), resp(200, 1));
         RequestHistoryDto e = service.list().get(0);
         assertEquals(List.of(), e.headers());
         assertEquals("", e.body());

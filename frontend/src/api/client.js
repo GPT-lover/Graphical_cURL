@@ -224,3 +224,45 @@ export function updateSavedRequest(id, payload) {
 export function deleteSavedRequest(id) {
   return del(`/api/saved-requests/${id}`)
 }
+
+// ---- Environments & variables ------------------------------------
+
+/** GET /api/environments - all environments (names only, no variable values). */
+export function fetchEnvironments() {
+  return getJson('/api/environments')
+}
+
+/** GET /api/environments/{id} - one environment WITH its variable values. */
+export function fetchEnvironment(id) {
+  return getJson(`/api/environments/${id}`)
+}
+
+/** POST /api/environments - create. Returns { id, name }. */
+export function createEnvironment(name) {
+  return postJson('/api/environments', { name })
+}
+
+/** PUT /api/environments/{id} - rename. */
+export function renameEnvironment(id, name) {
+  return putJson(`/api/environments/${id}`, { name })
+}
+
+/** DELETE /api/environments/{id} - delete it and its variables (409 if it's the only one). */
+export function deleteEnvironment(id) {
+  return del(`/api/environments/${id}`)
+}
+
+/** POST /api/environments/{envId}/variables - { key, value }. */
+export function createVariable(envId, payload) {
+  return postJson(`/api/environments/${envId}/variables`, payload)
+}
+
+/** PUT /api/environments/{envId}/variables/{varId} - { key, value }. */
+export function updateVariable(envId, varId, payload) {
+  return putJson(`/api/environments/${envId}/variables/${varId}`, payload)
+}
+
+/** DELETE /api/environments/{envId}/variables/{varId}. */
+export function deleteVariable(envId, varId) {
+  return del(`/api/environments/${envId}/variables/${varId}`)
+}

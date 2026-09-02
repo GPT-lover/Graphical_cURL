@@ -26,14 +26,18 @@ export function useSendRequest(onSent) {
   // send(), before React re-renders.
   const inFlight = useRef(false)
 
-  const send = useCallback(async (request) => {
+  const send = useCallback(async (request, environmentId = null) => {
     if (inFlight.current) {
       return
     }
 
-    const payload = toRequestPayload(request)
+    // The backend substitutes {{variables}} from this environment on a copy;
+    // the editor request keeps its placeholders.
+    const payload = { ...toRequestPayload(request), environmentId }
 
-    // Light client-side check only. Real validation happens on the backend.
+    // Light client-side check only. Real validation happens on the backend
+    // (including "unknown environment variable"). We can't check the URL here
+    // because it may be all placeholders, e.g. "{{BASE_URL}}/x".
     if (!payload.url) {
       setResult(null)
       setError({ message: 'Enter a URL before sending.' })
