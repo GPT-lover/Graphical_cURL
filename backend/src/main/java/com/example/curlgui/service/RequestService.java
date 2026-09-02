@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.HeaderDto;
 import com.example.curlgui.dto.SendRequestDto;
 import com.example.curlgui.dto.SendResponseDto;
@@ -78,7 +79,8 @@ public class RequestService {
         log.info("Proxying {} request to host \"{}\"", method, uri.getHost());
 
         List<String> warnings = new ArrayList<>();
-        HttpRequest httpRequest = buildHttpRequest(method, uri, body, dto.headers(), warnings);
+        HttpRequest httpRequest =
+                buildHttpRequest(method, uri, body, dto.headers(), dto.cookies(), warnings);
 
         long startNanos = System.nanoTime();
         HttpResponse<byte[]> httpResponse = send(httpRequest, uri);
@@ -137,7 +139,8 @@ public class RequestService {
     // ------------------------------------------------------------------
 
     private HttpRequest buildHttpRequest(String method, URI uri, String body,
-                                         List<HeaderDto> headers, List<String> warnings) {
+                                         List<HeaderDto> headers, List<CookieDto> cookies,
+                                         List<String> warnings) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(uri)
                 .timeout(REQUEST_TIMEOUT);
@@ -149,23 +152,31 @@ public class RequestService {
                 : HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8);
         builder.method(method, bodyPublisher);
 
-        addHeaders(builder, headers, warnings);
+        // addHeaders returns any header the user typed literally named "Cookie".
+        String manualCookieHeader = addHeaders(builder, headers, warnings);
+        applyCookies(builder, cookies, manualCookieHeader, warnings);
 
         return builder.build();
     }
 
     /**
-     * Copy the user's headers onto the request. Blank rows are skipped.
-     * {@code HttpClient} throws {@link IllegalArgumentException} for headers it
+     * Copy the user's headers onto the request. Blank rows are skipped. A header
+     * literally named {@code Cookie} is <em>not</em> added here - it's returned
+     * so {@link #applyCookies} can decide between it and the Cookies section.
+     *
+     * <p>{@code HttpClient} throws {@link IllegalArgumentException} for headers it
      * refuses to let callers set (e.g. {@code Host}, {@code Content-Length},
      * {@code Connection}) or for names containing illegal characters - we catch
      * that, skip the header, and record a warning rather than failing the whole
      * request.
+     *
+     * @return the value of a manually entered {@code Cookie} header, or {@code null}
      */
-    private void addHeaders(HttpRequest.Builder builder, List<HeaderDto> headers,
-                            List<String> warnings) {
+    private String addHeaders(HttpRequest.Builder builder, List<HeaderDto> headers,
+                              List<String> warnings) {
+        String manualCookieHeader = null;
         if (headers == null) {
-            return;
+            return null;
         }
         for (HeaderDto header : headers) {
             if (header == null) {
@@ -176,6 +187,10 @@ public class RequestService {
                 continue; // half-typed row in the editor
             }
             String value = header.value() == null ? "" : header.value();
+            if (name.equalsIgnoreCase("Cookie")) {
+                manualCookieHeader = value; // handled by applyCookies()
+                continue;
+            }
             try {
                 builder.header(name, value);
             } catch (IllegalArgumentException ex) {
@@ -183,6 +198,63 @@ public class RequestService {
                         + "and cannot be set by this client.");
             }
         }
+        return manualCookieHeader;
+    }
+
+    /**
+     * Combine the Cookies section into a single {@code Cookie: a=1; b=2} header.
+     *
+     * <p>Conflict rule (documented behaviour): <b>the Cookies section wins.</b>
+     * If it has any entries, they become the one and only {@code Cookie} header,
+     * replacing anything the user typed as a literal {@code Cookie} header (with
+     * a warning). If the Cookies section is empty, a manually typed {@code Cookie}
+     * header is sent unchanged. Either way there is at most one {@code Cookie}
+     * header - never duplicates.
+     */
+    private void applyCookies(HttpRequest.Builder builder, List<CookieDto> cookies,
+                              String manualCookieHeader, List<String> warnings) {
+        String fromSection = buildCookieHeader(cookies);
+
+        String cookieHeader;
+        if (fromSection != null) {
+            cookieHeader = fromSection;
+            if (manualCookieHeader != null && !manualCookieHeader.isBlank()) {
+                warnings.add("Your manually entered \"Cookie\" header was replaced by the Cookies section.");
+            }
+        } else if (manualCookieHeader != null && !manualCookieHeader.isBlank()) {
+            cookieHeader = manualCookieHeader;
+        } else {
+            return; // no cookies at all
+        }
+
+        try {
+            builder.header("Cookie", cookieHeader);
+        } catch (IllegalArgumentException ex) {
+            warnings.add("Could not set the Cookie header on the outgoing request.");
+        }
+    }
+
+    /** Build {@code "a=1; b=2"} from the cookie rows, skipping blank names. Null if none. */
+    private String buildCookieHeader(List<CookieDto> cookies) {
+        if (cookies == null || cookies.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (CookieDto cookie : cookies) {
+            if (cookie == null) {
+                continue;
+            }
+            String name = cookie.key() == null ? "" : cookie.key().trim();
+            if (name.isEmpty()) {
+                continue;
+            }
+            String value = cookie.value() == null ? "" : cookie.value().trim();
+            if (sb.length() > 0) {
+                sb.append("; ");
+            }
+            sb.append(name).append('=').append(value);
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     // ------------------------------------------------------------------

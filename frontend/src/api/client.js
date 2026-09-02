@@ -10,8 +10,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
  *
  *   'network'   - the backend couldn't be reached at all (not running, wrong
  *                 port, CORS blocked). fetch() itself rejected.
- *   'backend'   - the backend answered with a 4xx/5xx and an ErrorResponseDto
- *                 (bad URL, DNS failure, timeout contacting the target...).
+ *   'backend'   - the backend answered with a 4xx/5xx and an ErrorResponseDto.
  *   'malformed' - the backend answered but the body wasn't the JSON we expected.
  */
 export class ApiError extends Error {
@@ -25,17 +24,15 @@ export class ApiError extends Error {
 }
 
 /**
- * POST the request the user built to the backend, which performs the actual
- * outgoing HTTP call and returns a SendResponseDto:
- *   { statusCode, headers, body, durationMs, warnings }
- *
- * A 404/500 from the *target* server is a normal success here - it comes back
- * inside that object. This function only throws for failures of *our* pipeline.
+ * POST `payload` as JSON to `path` and return the parsed JSON body.
+ * Shared by every write endpoint. Throws an {@link ApiError} for network
+ * failure, a non-2xx response, or a non-JSON body - never leaves fetch's raw
+ * rejection to bubble up.
  */
-export async function sendRequest(payload) {
+async function postJson(path, payload) {
   let response
   try {
-    response = await fetch(`${BASE_URL}/api/requests/send`, {
+    response = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -72,6 +69,26 @@ export async function sendRequest(payload) {
   }
 
   return data
+}
+
+/**
+ * Ask the backend to perform the request the user built and return a
+ * SendResponseDto: { statusCode, headers, body, durationMs, warnings }.
+ *
+ * A 404/500 from the *target* server is a normal success here - it comes back
+ * inside that object. This only throws for failures of *our* pipeline.
+ */
+export function sendRequest(payload) {
+  return postJson('/api/requests/send', payload)
+}
+
+/**
+ * Ask the backend to parse a pasted cURL command. Returns a ParsedRequestDto:
+ * { method, url, headers, cookies, body, warnings }.
+ * The string is only ever parsed on the backend - never executed.
+ */
+export function importCurl(curl) {
+  return postJson('/api/requests/import-curl', { curl })
 }
 
 /**

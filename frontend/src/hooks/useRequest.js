@@ -1,12 +1,14 @@
 import { useCallback, useState } from 'react'
-import { createInitialRequest, makeHeader } from '../lib/request.js'
+import { createInitialRequest, makeCookie, makeHeader } from '../lib/request.js'
 
 /**
  * Holds the entire request-being-edited in one piece of React state and returns
  * small helper functions to change parts of it.
  *
- * Why one object instead of four useState calls (method, url, headers, body)?
- * - The sidebar (later phases) needs to load a whole saved request at once.
+ * Why one object instead of many useState calls (method, url, headers, cookies,
+ * body)?
+ * - "Import cURL" and the sidebar (later phases) need to load a whole request
+ *   at once.
  * - "Copy as cURL" / "Send" need a single snapshot of everything.
  * One object keeps those operations trivial.
  *
@@ -29,6 +31,8 @@ export function useRequest() {
     setRequest((prev) => ({ ...prev, body }))
   }, [])
 
+  // --- Headers --------------------------------------------------------
+
   const addHeader = useCallback(() => {
     setRequest((prev) => ({ ...prev, headers: [...prev.headers, makeHeader()] }))
   }, [])
@@ -50,10 +54,33 @@ export function useRequest() {
     }))
   }, [])
 
+  // --- Cookies (same pattern as headers) ----------------------------
+
+  const addCookie = useCallback(() => {
+    setRequest((prev) => ({ ...prev, cookies: [...prev.cookies, makeCookie()] }))
+  }, [])
+
+  const removeCookie = useCallback((id) => {
+    setRequest((prev) => {
+      const cookies = prev.cookies.filter((cookie) => cookie.id !== id)
+      return { ...prev, cookies: cookies.length > 0 ? cookies : [makeCookie()] }
+    })
+  }, [])
+
+  const updateCookie = useCallback((id, field, value) => {
+    setRequest((prev) => ({
+      ...prev,
+      cookies: prev.cookies.map((cookie) =>
+        cookie.id === id ? { ...cookie, [field]: value } : cookie,
+      ),
+    }))
+  }, [])
+
   /**
-   * Replace the whole request - used by the sidebar in later phases to load a
-   * history / saved entry into the editor. Accepts the plain
-   * { method, url, headers: [{key, value}], body } shape.
+   * Replace the whole request. Used by "Import cURL" now, and by the sidebar in
+   * later phases. Accepts the plain shape
+   * { method, url, headers:[{key,value}], cookies:[{key,value}], body }.
+   * Missing lists fall back to a single blank row so the editor stays usable.
    */
   const loadRequest = useCallback((incoming) => {
     setRequest({
@@ -63,6 +90,10 @@ export function useRequest() {
         incoming.headers && incoming.headers.length > 0
           ? incoming.headers.map((header) => makeHeader(header.key, header.value))
           : [makeHeader()],
+      cookies:
+        incoming.cookies && incoming.cookies.length > 0
+          ? incoming.cookies.map((cookie) => makeCookie(cookie.key, cookie.value))
+          : [makeCookie()],
       body: incoming.body ?? '',
     })
   }, [])
@@ -79,6 +110,9 @@ export function useRequest() {
     addHeader,
     removeHeader,
     updateHeader,
+    addCookie,
+    removeCookie,
+    updateCookie,
     loadRequest,
     resetRequest,
   }

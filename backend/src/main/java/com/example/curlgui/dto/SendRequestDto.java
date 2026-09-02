@@ -19,12 +19,15 @@ import java.util.List;
  * Jackson) creates it from the JSON request body when a controller method
  * parameter is annotated {@code @RequestBody}.
  *
- * {@code headers} and {@code body} may be {@code null} - the service handles that.
+ * {@code headers}, {@code cookies} and {@code body} may be {@code null} - the
+ * service handles that. {@code cookies} are combined into a single
+ * {@code Cookie: a=1; b=2} header when the request is sent.
  */
 public record SendRequestDto(
         String method,
         String url,
         List<HeaderDto> headers,
+        List<CookieDto> cookies,
         String body
 ) {
 }
