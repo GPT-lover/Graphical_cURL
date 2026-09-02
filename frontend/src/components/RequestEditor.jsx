@@ -33,6 +33,7 @@ export default function RequestEditor({
     updateCookie,
     addCookie,
     removeCookie,
+    clearCookies,
   } = actions
 
   function handleSend() {
@@ -75,6 +76,7 @@ export default function RequestEditor({
         onChange={updateCookie}
         onAdd={addCookie}
         onRemove={removeCookie}
+        onClear={clearCookies}
       />
 
       <BodyEditor value={request.body} onChange={setBody} />

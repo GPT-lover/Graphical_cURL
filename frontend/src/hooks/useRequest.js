@@ -77,6 +77,15 @@ export function useRequest() {
   }, [])
 
   /**
+   * Remove every cookie from THIS request. Leaves one blank row so the section
+   * stays usable. Does not touch headers, body, URL, the response, or any
+   * browser cookies.
+   */
+  const clearCookies = useCallback(() => {
+    setRequest((prev) => ({ ...prev, cookies: [makeCookie()] }))
+  }, [])
+
+  /**
    * Replace the whole request. Used by "Import cURL" now, and by the sidebar in
    * later phases. Accepts the plain shape
    * { method, url, headers:[{key,value}], cookies:[{key,value}], body }.
@@ -113,6 +122,7 @@ export function useRequest() {
     addCookie,
     removeCookie,
     updateCookie,
+    clearCookies,
     loadRequest,
     resetRequest,
   }

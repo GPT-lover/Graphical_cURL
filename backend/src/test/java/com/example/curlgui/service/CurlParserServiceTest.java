@@ -301,6 +301,42 @@ class CurlParserServiceTest {
         assertTrue(r.warnings().isEmpty(), "unexpected warnings: " + r.warnings());
     }
 
+    /**
+     * Phase 5 Test 6 - importing a command with a cookie option must populate the
+     * dedicated cookies list (not headers), keep the body verbatim, and infer
+     * POST from the presence of data.
+     */
+    @Test
+    void importPopulatesCookiesSectionNotHeaders() {
+        String cmd = String.join("\n",
+                "curl --url 'https://api.example.com/test' \\",
+                "  -H 'content-type: application/json' \\",
+                "  -b 'session=FAKE_SESSION; theme=dark' \\",
+                "  --data-raw '{\"rating\":7}'");
+
+        ParsedRequestDto r = parser.parse(cmd);
+
+        assertEquals("POST", r.method());
+        assertEquals("https://api.example.com/test", r.url());
+        assertEquals("{\"rating\":7}", r.body());
+        assertEquals(List.of(new HeaderDto("content-type", "application/json")), r.headers());
+        assertEquals(
+                List.of(new CookieDto("session", "FAKE_SESSION"), new CookieDto("theme", "dark")),
+                r.cookies());
+    }
+
+    /** A manually supplied "Cookie:" header is folded into the cookies list. */
+    @Test
+    void importCookieHeaderBecomesCookiesNotADuplicateHeader() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com' -H 'Cookie: session=abc123; theme=dark; token=abc=def'");
+        assertTrue(r.headers().isEmpty());
+        assertEquals(List.of(
+                new CookieDto("session", "abc123"),
+                new CookieDto("theme", "dark"),
+                new CookieDto("token", "abc=def")), r.cookies());
+    }
+
     /** Same command with the URL as a bare positional arg instead of --url. */
     @Test
     void fullChromeStyleWithoutUrlOption() {

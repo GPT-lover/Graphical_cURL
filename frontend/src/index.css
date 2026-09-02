@@ -241,6 +241,18 @@ code {
   text-align: center;
 }
 
+/* Right-aligned controls in a section header (e.g. Cookies: Show / Clear). */
+.panel__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.btn--tiny {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.5rem;
+}
+
 /* ---- Editor toolbar (Import cURL, later: Copy as cURL) ---------- */
 
 .editor-toolbar {

@@ -12,6 +12,9 @@
  *   keyPlaceholder / valuePlaceholder - input placeholders
  *   addLabel         - text for the add button
  *   keyAriaLabel / valueAriaLabel - accessible names for the inputs
+ *   valueInputType   - 'text' (default) or 'password' to mask sensitive values
+ *   headerActions    - optional React node shown at the right of the section
+ *                      header (e.g. Cookies' Show/Hide + Clear buttons)
  *
  * Rows are keyed by their stable `id`, not the array index, so removing a middle
  * row doesn't make React reassign the remaining <input> elements.
@@ -27,6 +30,8 @@ export default function KeyValueEditor({
   addLabel = '+ Add',
   keyAriaLabel = 'Key',
   valueAriaLabel = 'Value',
+  valueInputType = 'text',
+  headerActions = null,
 }) {
   const filledCount = rows.filter((row) => row.key.trim() !== '').length
 
@@ -35,6 +40,7 @@ export default function KeyValueEditor({
       <div className="panel__header">
         <h2 className="panel__title">{title}</h2>
         {filledCount > 0 && <span className="badge">{filledCount}</span>}
+        {headerActions && <div className="panel__actions">{headerActions}</div>}
       </div>
 
       <div className="pairs">
@@ -51,6 +57,7 @@ export default function KeyValueEditor({
             />
             <input
               className="input"
+              type={valueInputType}
               placeholder={valuePlaceholder}
               value={row.value}
               onChange={(event) => onChange(row.id, 'value', event.target.value)}

@@ -202,59 +202,23 @@ public class RequestService {
     }
 
     /**
-     * Combine the Cookies section into a single {@code Cookie: a=1; b=2} header.
-     *
-     * <p>Conflict rule (documented behaviour): <b>the Cookies section wins.</b>
-     * If it has any entries, they become the one and only {@code Cookie} header,
-     * replacing anything the user typed as a literal {@code Cookie} header (with
-     * a warning). If the Cookies section is empty, a manually typed {@code Cookie}
-     * header is sent unchanged. Either way there is at most one {@code Cookie}
-     * header - never duplicates.
+     * Set the single {@code Cookie} header for the outgoing request. The decision
+     * (Cookies section vs. a manually typed {@code Cookie} header, duplicate
+     * handling, trimming) lives in {@link CookieHeader#resolve} so it can be
+     * unit-tested without an {@code HttpClient}.
      */
     private void applyCookies(HttpRequest.Builder builder, List<CookieDto> cookies,
                               String manualCookieHeader, List<String> warnings) {
-        String fromSection = buildCookieHeader(cookies);
-
-        String cookieHeader;
-        if (fromSection != null) {
-            cookieHeader = fromSection;
-            if (manualCookieHeader != null && !manualCookieHeader.isBlank()) {
-                warnings.add("Your manually entered \"Cookie\" header was replaced by the Cookies section.");
-            }
-        } else if (manualCookieHeader != null && !manualCookieHeader.isBlank()) {
-            cookieHeader = manualCookieHeader;
-        } else {
-            return; // no cookies at all
+        CookieHeader.Result resolved = CookieHeader.resolve(cookies, manualCookieHeader);
+        warnings.addAll(resolved.warnings());
+        if (resolved.value() == null) {
+            return; // no cookies supplied - send no Cookie header
         }
-
         try {
-            builder.header("Cookie", cookieHeader);
+            builder.header("Cookie", resolved.value());
         } catch (IllegalArgumentException ex) {
             warnings.add("Could not set the Cookie header on the outgoing request.");
         }
-    }
-
-    /** Build {@code "a=1; b=2"} from the cookie rows, skipping blank names. Null if none. */
-    private String buildCookieHeader(List<CookieDto> cookies) {
-        if (cookies == null || cookies.isEmpty()) {
-            return null;
-        }
-        StringBuilder sb = new StringBuilder();
-        for (CookieDto cookie : cookies) {
-            if (cookie == null) {
-                continue;
-            }
-            String name = cookie.key() == null ? "" : cookie.key().trim();
-            if (name.isEmpty()) {
-                continue;
-            }
-            String value = cookie.value() == null ? "" : cookie.value().trim();
-            if (sb.length() > 0) {
-                sb.append("; ");
-            }
-            sb.append(name).append('=').append(value);
-        }
-        return sb.length() == 0 ? null : sb.toString();
     }
 
     // ------------------------------------------------------------------
