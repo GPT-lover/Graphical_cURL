@@ -1,0 +1,60 @@
+# electron-builder configuration - Windows x64 desktop installer.
+#
+# macOS / Linux targets are intentionally omitted for now. The structure below
+# (a `win` block) leaves room to add `mac:` / `linux:` blocks later without
+# reworking anything else.
+
+appId: com.example.graphicalcurl
+productName: Graphical cURL
+copyright: Copyright (c) 2026 Graphical cURL
+
+directories:
+  output: release
+  buildResources: electron/resources
+
+# What goes INSIDE the app (app.asar). Only the Electron shell itself - the
+# heavy artifacts (Spring Boot jar, bundled Java runtime, built frontend) are
+# shipped as `extraResources` below so they stay real files on disk.
+files:
+  - electron/**/*
+  - "!electron/scripts/**"
+  - package.json
+
+# Copied verbatim into  <install dir>/resources/ .  Resolved at runtime via
+# process.resourcesPath (see electron/main.js).
+extraResources:
+  # The executable Spring Boot jar. `-plain.jar` is the library jar without an
+  # embedded server - exclude it.
+  - from: backend/build/libs
+    to: backend
+    filter:
+      - "*.jar"
+      - "!*-plain.jar"
+  # A minimal Java runtime produced by jlink (electron/scripts/build-jre.mjs).
+  # This is why the end user does NOT need Java installed.
+  - from: backend/build/jre
+    to: jre
+  # The production React build (vite build -> frontend/dist).
+  - from: frontend/dist
+    to: ui
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # Drop a 256x256 icon here and uncomment to brand the app + installer.
+  # icon: electron/resources/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false          # per-user install: no admin prompt, clean uninstall
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Graphical cURL
+  runAfterFinish: true
+  artifactName: Graphical-cURL-Setup-${version}.${ext}

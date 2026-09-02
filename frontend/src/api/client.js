@@ -2,7 +2,21 @@
 // way. As the API grows, new functions get added here rather than scattering
 // fetch() calls through components.
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
+// Where the Spring Boot backend lives. Resolution order:
+//
+//   1. window.curlGui.apiBaseUrl - injected at runtime by the Electron preload
+//      script. The desktop app picks the backend's port dynamically at launch
+//      (port 8080 may be taken), so it can only be known at runtime.
+//   2. import.meta.env.VITE_API_BASE_URL - baked in at `vite build` time from
+//      frontend/.env.development. This is what plain browser development uses.
+//   3. http://localhost:8080 - last-resort default.
+//
+// Plain `npm run dev` in a browser has no `window.curlGui`, so it keeps using
+// the .env value exactly as before.
+const runtimeBase =
+  typeof window !== 'undefined' && window.curlGui && window.curlGui.apiBaseUrl
+const BASE_URL =
+  runtimeBase || import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
 
 /**
  * One error type for everything that can go wrong talking to our backend, so the
@@ -265,4 +279,28 @@ export function updateVariable(envId, varId, payload) {
 /** DELETE /api/environments/{envId}/variables/{varId}. */
 export function deleteVariable(envId, varId) {
   return del(`/api/environments/${envId}/variables/${varId}`)
+}
+
+// ---- Run multiple (request loop) --------------------------------
+
+/**
+ * POST /api/requests/run-multiple - start a loop. Returns { runId }.
+ * `payload` = { request: {...SendRequestDto...}, runs, delayMs, mode }.
+ * 400 if runs/delay/mode are invalid or an environment variable can't resolve.
+ */
+export function startRunMultiple(payload) {
+  return postJson('/api/requests/run-multiple', payload)
+}
+
+/**
+ * GET /api/requests/run-multiple/{runId}?offset=N - current progress.
+ * `offset` = how many results the caller already has (only newer ones come back).
+ */
+export function getRunMultipleStatus(runId, offset = 0) {
+  return getJson(`/api/requests/run-multiple/${runId}?offset=${offset}`)
+}
+
+/** POST /api/requests/run-multiple/{runId}/stop - stop starting new requests. */
+export function stopRunMultiple(runId) {
+  return postJson(`/api/requests/run-multiple/${runId}/stop`, {})
 }

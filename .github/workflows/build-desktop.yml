@@ -1,0 +1,64 @@
+name: Build desktop (Windows)
+
+# Produces the Windows installer as a downloadable workflow artifact.
+# It does NOT create or publish a GitHub Release - that step is intentionally
+# left out until local packaging is confirmed good.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'electron/**'
+      - 'frontend/**'
+      - 'backend/**'
+      - 'package.json'
+      - 'electron-builder.yml'
+      - '.github/workflows/build-desktop.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 (Temurin, full JDK - includes jlink)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install root (Electron) dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Build frontend (vite build)
+        run: npm run build:frontend
+
+      - name: Build backend (Spring Boot bootJar)
+        working-directory: backend
+        run: ./gradlew.bat clean bootJar
+
+      - name: Build bundled Java runtime (jlink)
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+        run: npm run build:jre
+
+      - name: Package Windows installer (electron-builder)
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Graphical-cURL-Setup
+          path: release/*.exe
+          if-no-files-found: error

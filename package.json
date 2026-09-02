@@ -1,0 +1,30 @@
+{
+  "name": "graphical-curl",
+  "productName": "Graphical cURL",
+  "version": "1.0.0",
+  "description": "Desktop shell (Electron) around the Graphical cURL React + Spring Boot app.",
+  "private": true,
+  "author": "Graphical cURL",
+  "license": "MIT",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "start": "electron .",
+    "electron:dev": "cross-env CURL_GUI_DEV=1 concurrently -k -s first -n backend,vite,shell -c blue,magenta,green \"npm:electron:dev:backend\" \"npm:electron:dev:vite\" \"npm:electron:dev:shell\"",
+    "electron:dev:backend": "cd backend && gradlew.bat bootRun",
+    "electron:dev:vite": "npm --prefix frontend run dev",
+    "electron:dev:shell": "cross-env CURL_GUI_DEV=1 ELECTRON_START_URL=http://localhost:5173 CURL_GUI_BACKEND_URL=http://localhost:8080 node electron/scripts/wait-and-launch.mjs",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "cd backend && gradlew.bat clean bootJar",
+    "build:jre": "node electron/scripts/build-jre.mjs",
+    "prepackage": "npm run build:frontend && npm run build:backend && npm run build:jre",
+    "electron:build": "npm run prepackage && electron-builder --win --x64",
+    "test:backend": "cd backend && gradlew.bat test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^32.2.7",
+    "electron-builder": "^25.1.8"
+  }
+}

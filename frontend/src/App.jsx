@@ -12,7 +12,9 @@ import { useCurlExport } from './hooks/useCurlExport.js'
 import { useHistory } from './hooks/useHistory.js'
 import { useCollections } from './hooks/useCollections.js'
 import { useEnvironments } from './hooks/useEnvironments.js'
+import { useRunMultiple } from './hooks/useRunMultiple.js'
 import EnvironmentModal from './components/EnvironmentModal.jsx'
+import RunMultipleModal from './components/RunMultipleModal.jsx'
 import { toRequestPayload } from './lib/request.js'
 import {
   createCollection,
@@ -43,9 +45,11 @@ export default function App() {
   const environments = useEnvironments()
   const { result, error, isSending, send } = useSendRequest(history.refresh)
   const exportCurl = useCurlExport()
+  const runMultiple = useRunMultiple()
 
   const [importOpen, setImportOpen] = useState(false)
   const [envModalOpen, setEnvModalOpen] = useState(false)
+  const [runMultipleOpen, setRunMultipleOpen] = useState(false)
   const [saved, setSaved] = useState(null)
   const [saveModal, setSaveModal] = useState({ open: false, mode: 'save' })
 
@@ -54,6 +58,34 @@ export default function App() {
     (req) => send(req, environments.activeEnvironmentId),
     [send, environments.activeEnvironmentId],
   )
+
+  // Start a loop: snapshot the current request + active environment. The backend
+  // runs this snapshot; editing the editor afterwards does not affect it.
+  function handleRunMultiple({ runs, delayMs, mode }) {
+    runMultiple.start({
+      request: {
+        ...toRequestPayload(request),
+        environmentId: environments.activeEnvironmentId ?? null,
+      },
+      runs,
+      delayMs,
+      mode,
+    })
+    // The loop records ONE sanitised History entry when it finishes; the sidebar
+    // picks it up when the dialog is closed (see closeRunMultiple).
+  }
+
+  function openRunMultiple() {
+    runMultiple.reset()
+    setRunMultipleOpen(true)
+  }
+
+  function closeRunMultiple() {
+    if (runMultiple.phase === 'running') runMultiple.stop()
+    setRunMultipleOpen(false)
+    runMultiple.reset()
+    history.refresh()
+  }
 
   // --- helpers ------------------------------------------------------
 
@@ -232,6 +264,7 @@ export default function App() {
             onImportClick={() => setImportOpen(true)}
             onExport={exportCurl.run}
             exportCopied={exportCurl.copied}
+            onRunMultiple={openRunMultiple}
             savedRequestName={saved?.name ?? null}
             onNewRequest={handleNewRequest}
             onSave={() => setSaveModal({ open: true, mode: 'save' })}
@@ -280,6 +313,13 @@ export default function App() {
         environments={environments.environments}
         activeId={environments.activeEnvironmentId}
         onChanged={environments.refresh}
+      />
+
+      <RunMultipleModal
+        open={runMultipleOpen}
+        onClose={closeRunMultiple}
+        run={runMultiple}
+        onRun={handleRunMultiple}
       />
     </div>
   )

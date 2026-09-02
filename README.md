@@ -29,6 +29,43 @@ Spring Boot (:8080)
 SQLite  ->  backend/data/app.db
 ```
 
+## Desktop app (Electron — Phase 12)
+
+The React frontend + Spring Boot backend can be run and shipped as a self-contained
+Windows desktop app. Electron is only a **wrapper / orchestrator** — the backend is
+still Spring Boot, HTTP is still Java's `HttpClient`, storage is still SQLite.
+
+```
+Electron (main process)
+   ├── picks a free loopback port (prefers 8080)
+   ├── starts the bundled Spring Boot jar on it, with a bundled Java runtime
+   ├── waits for  GET /api/health
+   ├── opens the window and loads the built React app
+   └── on exit, terminates the backend process it started
+
+SQLite lives in  %APPDATA%\Graphical cURL\graphical-curl.db   (user-writable)
+Logs live in     %APPDATA%\Graphical cURL\logs\
+```
+
+### Commands
+
+| Task | Command | Notes |
+|------|---------|-------|
+| Browser dev — frontend | `cd frontend && npm run dev` (or `npm run dev` at repo root) | unchanged; http://localhost:5173 |
+| Browser dev — backend | `cd backend && gradlew.bat bootRun` | unchanged; http://localhost:8080 |
+| Desktop dev | `npm run electron:dev` | starts backend + Vite + Electron together |
+| Build the installer | `npm run electron:build` | frontend build → `bootJar` → `jlink` → electron-builder |
+| Backend tests | `npm run test:backend` | = `cd backend && gradlew.bat test` |
+
+The installer is written to **`release/Graphical-cURL-Setup-<version>.exe`**
+(version comes from the root `package.json`). Prerequisites for *building* the
+installer: Node 22 and a full **JDK 25** (with `jlink`) on `JAVA_HOME`. The
+*end user* needs neither Java nor Node — both are bundled.
+
+See the Phase 12 notes for the full design (dynamic port, `jlink` module set,
+database path, shutdown handling, CI workflow at
+`.github/workflows/build-desktop.yml`).
+
 ## Build status of this phase
 
 **Phase 1 — project skeleton.** One backend endpoint (`GET /api/health`) and a

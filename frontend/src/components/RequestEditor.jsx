@@ -17,6 +17,7 @@ import EnvironmentBar from './EnvironmentBar.jsx'
  *   onImportClick    - () open the "Import cURL" dialog
  *   onExport         - (request) generate + copy as a cURL command
  *   exportCopied     - true briefly after a successful "Copy as cURL"
+ *   onRunMultiple    - () open the "Run Multiple" dialog
  *   savedRequestName - name of the loaded saved request, or null if unsaved
  *   onNewRequest     - () clear the editor + the saved-request selection
  *   onSave           - () open the Save dialog (create a new saved request)
@@ -33,6 +34,7 @@ export default function RequestEditor({
   onImportClick,
   onExport,
   exportCopied,
+  onRunMultiple,
   savedRequestName,
   onNewRequest,
   onSave,
@@ -115,6 +117,9 @@ export default function RequestEditor({
           disabled={isSending}
         >
           {isSending ? 'Sending…' : 'Send'}
+        </button>
+        <button type="button" className="btn" onClick={onRunMultiple}>
+          Run Multiple
         </button>
         <button type="button" className="btn" onClick={() => onExport(request)}>
           Copy as cURL
