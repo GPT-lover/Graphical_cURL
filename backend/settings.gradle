@@ -1,0 +1,3 @@
+// The name Gradle uses for this build. Keeping it explicit avoids Gradle
+// guessing from the folder name.
+rootProject.name = 'curl-gui-backend'

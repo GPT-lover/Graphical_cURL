@@ -1,0 +1,10 @@
+.gradle/
+build/
+bin/
+!gradle/wrapper/gradle-wrapper.jar
+
+# SQLite database (created at runtime)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm

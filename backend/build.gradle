@@ -1,0 +1,57 @@
+plugins {
+    id 'java'
+    // Spring Boot's Gradle plugin: adds `bootRun`, builds an executable jar,
+    // and (with the plugin below) aligns dependency versions to a tested set.
+    id 'org.springframework.boot' version '3.5.16'
+    // Applies the Spring Boot "BOM" so we can declare dependencies without
+    // version numbers and get versions that are known to work together.
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    // Compile to Java 21 bytecode for broad library compatibility. The JDK that
+    // actually runs the app on this machine is newer (Java 25) - that's fine.
+    sourceCompatibility = '21'
+    targetCompatibility = '21'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring MVC + embedded Tomcat + Jackson (JSON). This is what makes
+    // @RestController endpoints work.
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Spring Data JPA + Hibernate. Used from Phase 4 for history / saved requests.
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // SQLite JDBC driver - an embedded, file-based database. No server to install.
+    // Version is managed by the Spring Boot BOM.
+    runtimeOnly 'org.xerial:sqlite-jdbc'
+
+    // Hibernate's SQLite dialect lives in the "community" dialects module.
+    implementation 'org.hibernate.orm:hibernate-community-dialects'
+
+    // JUnit 5 + Spring test support.
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Byte Buddy (used by Hibernate to enhance entity classes) can lag a brand-new
+// JDK's class-file version. This flag tells it to proceed instead of failing.
+// Harmless on older JDKs; only relevant here because this machine runs Java 25.
+def bytebuddyExperimental = '-Dnet.bytebuddy.experimental=true'
+
+tasks.named('test') {
+    useJUnitPlatform()
+    jvmArgs bytebuddyExperimental
+}
+
+tasks.named('bootRun') {
+    jvmArgs bytebuddyExperimental
+}

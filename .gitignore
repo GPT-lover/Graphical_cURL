@@ -1,0 +1,27 @@
+# ---- Backend (Gradle / Java) ----
+backend/.gradle/
+backend/build/
+backend/bin/
+!backend/gradle/wrapper/gradle-wrapper.jar
+
+# SQLite database files (created at runtime, not source)
+backend/data/*.db
+backend/data/*.db-journal
+backend/data/*.db-wal
+backend/data/*.db-shm
+
+# ---- Frontend (Node / Vite) ----
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ---- Editors / OS ----
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local-only env overrides (committed defaults: .env.development)
+frontend/.env.local
+frontend/.env.*.local
