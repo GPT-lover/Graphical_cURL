@@ -24,16 +24,16 @@ export class ApiError extends Error {
 }
 
 /**
- * POST `payload` as JSON to `path` and return the parsed JSON body.
- * Shared by every write endpoint. Throws an {@link ApiError} for network
- * failure, a non-2xx response, or a non-JSON body - never leaves fetch's raw
- * rejection to bubble up.
+ * Send `payload` as JSON to `path` with the given method and return the parsed
+ * JSON body. Shared by every write endpoint. Throws an {@link ApiError} for
+ * network failure, a non-2xx response, or a non-JSON body - never leaves fetch's
+ * raw rejection to bubble up.
  */
-async function postJson(path, payload) {
+async function sendJson(method, path, payload) {
   let response
   try {
     response = await fetch(`${BASE_URL}${path}`, {
-      method: 'POST',
+      method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     })
@@ -94,6 +94,9 @@ async function postJson(path, payload) {
 
   return data
 }
+
+const postJson = (path, payload) => sendJson('POST', path, payload)
+const putJson = (path, payload) => sendJson('PUT', path, payload)
 
 /**
  * Ask the backend to perform the request the user built and return a
@@ -175,4 +178,49 @@ export function deleteHistoryEntry(id) {
 /** DELETE /api/history - remove every entry. */
 export function clearHistory() {
   return del('/api/history')
+}
+
+// ---- Collections & saved requests -----------------------------------
+
+/** GET /api/collections - collections, each with its saved-request summaries. */
+export function fetchCollections() {
+  return getJson('/api/collections')
+}
+
+/** POST /api/collections - create a collection. Returns the created collection. */
+export function createCollection(name) {
+  return postJson('/api/collections', { name })
+}
+
+/** PUT /api/collections/{id} - rename a collection. */
+export function renameCollection(id, name) {
+  return putJson(`/api/collections/${id}`, { name })
+}
+
+/** DELETE /api/collections/{id} - delete a collection and its saved requests. */
+export function deleteCollection(id) {
+  return del(`/api/collections/${id}`)
+}
+
+/** GET /api/saved-requests/{id} - one full saved request. */
+export function getSavedRequest(id) {
+  return getJson(`/api/saved-requests/${id}`)
+}
+
+/**
+ * POST /api/saved-requests - create a saved request.
+ * `payload` = { name, collectionId, method, url, headers, body } (no cookies).
+ */
+export function createSavedRequest(payload) {
+  return postJson('/api/saved-requests', payload)
+}
+
+/** PUT /api/saved-requests/{id} - update an existing saved request. */
+export function updateSavedRequest(id, payload) {
+  return putJson(`/api/saved-requests/${id}`, payload)
+}
+
+/** DELETE /api/saved-requests/{id}. */
+export function deleteSavedRequest(id) {
+  return del(`/api/saved-requests/${id}`)
 }

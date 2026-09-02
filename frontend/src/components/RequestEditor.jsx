@@ -9,14 +9,18 @@ import BodyEditor from './BodyEditor.jsx'
  * matching helper from the useRequest hook.
  *
  * Props:
- *   request       - the current request object (from useRequest)
- *   actions       - the setter helpers from useRequest (method/url/headers/
- *                   cookies/body)
- *   onSend        - () called with the request when the user hits Send / Enter
- *   isSending     - true while a request is in flight (disables the button)
- *   onImportClick - () open the "Import cURL" dialog
- *   onExport      - (request) generate + copy the request as a cURL command
- *   exportCopied  - true briefly after a successful "Copy as cURL"
+ *   request          - the current request object (from useRequest)
+ *   actions          - the setter helpers from useRequest
+ *   onSend           - () send the request
+ *   isSending        - true while a request is in flight (disables Send)
+ *   onImportClick    - () open the "Import cURL" dialog
+ *   onExport         - (request) generate + copy as a cURL command
+ *   exportCopied     - true briefly after a successful "Copy as cURL"
+ *   savedRequestName - name of the loaded saved request, or null if unsaved
+ *   onNewRequest     - () clear the editor + the saved-request selection
+ *   onSave           - () open the Save dialog (create a new saved request)
+ *   onUpdate         - () overwrite the currently loaded saved request
+ *   onSaveAs         - () open the Save dialog to create a copy
  */
 export default function RequestEditor({
   request,
@@ -26,6 +30,11 @@ export default function RequestEditor({
   onImportClick,
   onExport,
   exportCopied,
+  savedRequestName,
+  onNewRequest,
+  onSave,
+  onUpdate,
+  onSaveAs,
 }) {
   const {
     setMethod,
@@ -50,9 +59,34 @@ export default function RequestEditor({
   return (
     <div className="request-editor">
       <div className="editor-toolbar">
-        <button type="button" className="btn" onClick={onImportClick}>
-          Import cURL
-        </button>
+        <div className="editor-toolbar__left">
+          <button type="button" className="btn" onClick={onNewRequest}>
+            New Request
+          </button>
+          <button type="button" className="btn" onClick={onImportClick}>
+            Import cURL
+          </button>
+        </div>
+
+        <div className="editor-toolbar__right">
+          {savedRequestName ? (
+            <>
+              <span className="editing-label" title={savedRequestName}>
+                editing: {savedRequestName}
+              </span>
+              <button type="button" className="btn" onClick={onUpdate}>
+                Update
+              </button>
+              <button type="button" className="btn" onClick={onSaveAs}>
+                Save As
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn" onClick={onSave}>
+              Save
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="request-bar">
@@ -71,9 +105,7 @@ export default function RequestEditor({
         </button>
       </div>
 
-      {exportCopied && (
-        <p className="copied-note">✓ cURL copied to clipboard</p>
-      )}
+      {exportCopied && <p className="copied-note">✓ cURL copied to clipboard</p>}
 
       <HeadersEditor
         headers={request.headers}

@@ -1,66 +1,50 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { statusClass } from '../lib/http.js'
+import { byteLength, formatBytes, statusText } from '../lib/response.js'
+import ResponseBody from './response/ResponseBody.jsx'
+import ResponseHeaders from './response/ResponseHeaders.jsx'
+import ResponseRaw from './response/ResponseRaw.jsx'
 
-// Reason phrases for the common status codes. Anything not listed just shows the
-// number (that's fine - the requirement is only that a 404 shows "404").
-const REASON_PHRASE = {
-  200: 'OK',
-  201: 'Created',
-  202: 'Accepted',
-  204: 'No Content',
-  301: 'Moved Permanently',
-  302: 'Found',
-  304: 'Not Modified',
-  307: 'Temporary Redirect',
-  308: 'Permanent Redirect',
-  400: 'Bad Request',
-  401: 'Unauthorized',
-  403: 'Forbidden',
-  404: 'Not Found',
-  405: 'Method Not Allowed',
-  409: 'Conflict',
-  410: 'Gone',
-  422: 'Unprocessable Entity',
-  429: 'Too Many Requests',
-  500: 'Internal Server Error',
-  502: 'Bad Gateway',
-  503: 'Service Unavailable',
-  504: 'Gateway Timeout',
-}
+const TABS = [
+  { id: 'body', label: 'Body' },
+  { id: 'headers', label: 'Headers' },
+  { id: 'raw', label: 'Raw' },
+]
 
 /**
- * Pretty-print the body if it parses as JSON, otherwise show it verbatim.
- * The original string in `result.body` is never modified - this only affects
- * what we render.
- */
-function formatBody(body) {
-  if (typeof body !== 'string' || body.trim() === '') {
-    return { text: body ?? '', isJson: false }
-  }
-  try {
-    return { text: JSON.stringify(JSON.parse(body), null, 2), isJson: true }
-  } catch {
-    return { text: body, isJson: false }
-  }
-}
-
-/**
- * The response area. Shows one of four things depending on props:
- *   isSending      -> "Sending request…"
- *   error          -> a red error box (never crashes the app)
- *   result         -> status + timing + headers + body
- *   none of those  -> the idle placeholder
+ * The response viewer. Four states:
+ *   isSending      -> loading indicator
+ *   error          -> a red box (network / app error - NOT an HTTP status)
+ *   result         -> summary (status · time · size) + Body / Headers / Raw tabs
+ *   none           -> the idle placeholder
  *
- * Props:
- *   result    - SendResponseDto | null
- *   error     - { message, detail? } | null
- *   isSending - boolean
+ * A 4xx/5xx from the target server is a normal `result` (our backend returns it
+ * with HTTP 200), so it renders here like any response, just with a red status
+ * pill - it is never shown as a network error.
+ *
+ * Props: result (SendResponseDto | null), error ({message, detail?} | null),
+ *        isSending (boolean).
  */
 export default function ResponsePanel({ result, error, isSending }) {
-  const formatted = useMemo(
-    () => (result ? formatBody(result.body) : null),
+  const [tab, setTab] = useState('body')
+
+  // Every new response starts on the Body tab.
+  useEffect(() => {
+    if (result) setTab('body')
+  }, [result])
+
+  const size = useMemo(
+    () => (result ? formatBytes(byteLength(result.body)) : ''),
     [result],
   )
+
+  function onTabKeyDown(event) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const i = TABS.findIndex((t) => t.id === tab)
+    const next = event.key === 'ArrowRight' ? (i + 1) % TABS.length : (i - 1 + TABS.length) % TABS.length
+    setTab(TABS[next].id)
+  }
 
   return (
     <section className="panel response-panel">
@@ -86,9 +70,10 @@ export default function ResponsePanel({ result, error, isSending }) {
         <>
           <div className="response-summary">
             <span className={`status-code status-code--${statusClass(result.statusCode)}`}>
-              {result.statusCode} {REASON_PHRASE[result.statusCode] ?? ''}
+              {result.statusCode} {statusText(result.statusCode)}
             </span>
             <span className="response-time">{result.durationMs} ms</span>
+            {size && <span className="response-size">{size}</span>}
           </div>
 
           {Array.isArray(result.warnings) && result.warnings.length > 0 && (
@@ -99,34 +84,46 @@ export default function ResponsePanel({ result, error, isSending }) {
             </ul>
           )}
 
-          <div className="response-section">
-            <h3 className="response-section__title">Response Headers</h3>
-            <div className="kv-list">
-              {Object.entries(result.headers ?? {}).map(([name, value]) => (
-                <div className="kv-list__row" key={name}>
-                  <span className="kv-list__key">{name}</span>
-                  <span className="kv-list__value">{value}</span>
-                </div>
-              ))}
-              {Object.keys(result.headers ?? {}).length === 0 && (
-                <p className="kv-list__empty">No response headers.</p>
-              )}
-            </div>
+          <div className="response-tabs" role="tablist" aria-label="Response" onKeyDown={onTabKeyDown}>
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`response-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls="response-tabpanel"
+                tabIndex={tab === t.id ? 0 : -1}
+                className={'response-tab' + (tab === t.id ? ' response-tab--active' : '')}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          <div className="response-section">
-            <h3 className="response-section__title">
-              Response Body
-              {formatted.isJson && <span className="tag">JSON</span>}
-            </h3>
-            <pre className="response-body">{formatted.text || '(empty body)'}</pre>
+          <div
+            id="response-tabpanel"
+            role="tabpanel"
+            aria-labelledby={`response-tab-${tab}`}
+            className="response-tabpanel"
+          >
+            {tab === 'body' && <ResponseBody body={result.body} headers={result.headers} />}
+            {tab === 'headers' && <ResponseHeaders headers={result.headers} />}
+            {tab === 'raw' && (
+              <ResponseRaw
+                statusCode={result.statusCode}
+                headers={result.headers}
+                body={result.body}
+              />
+            )}
           </div>
         </>
       )}
 
       {!isSending && !error && !result && (
         <div className="response-panel__placeholder">
-          Send a request and its status, timing, headers and body will appear here.
+          Send a request and its status, timing, size, headers and body will appear here.
         </div>
       )}
     </section>

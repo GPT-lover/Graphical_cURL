@@ -1,12 +1,25 @@
 import HistoryPanel from './HistoryPanel.jsx'
+import SavedRequestsPanel from './SavedRequestsPanel.jsx'
 
 /**
- * Left rail: the functional History panel plus a Saved Requests placeholder
- * (a later phase).
+ * Left rail: the functional History panel (Phase 7) and the Saved Requests tree
+ * (Phase 8). Both are independent.
  *
- * Props: history = the object returned by useHistory(); onRestore(entry).
+ * Props:
+ *   history        - object from useHistory()
+ *   collections    - object from useCollections()
+ *   onRestore(entry)          - load a history entry into the editor
+ *   activeSavedRequestId      - highlight the currently loaded saved request
+ *   savedRequestActions       - { openRequest, newCollection, renameCollection,
+ *                                 deleteCollection, renameRequest, deleteRequest }
  */
-export default function Sidebar({ history, onRestore }) {
+export default function Sidebar({
+  history,
+  collections,
+  onRestore,
+  activeSavedRequestId,
+  savedRequestActions,
+}) {
   return (
     <aside className="sidebar">
       <HistoryPanel
@@ -17,10 +30,17 @@ export default function Sidebar({ history, onRestore }) {
         onClear={history.clear}
       />
 
-      <div className="sidebar__section">
-        <h2 className="sidebar__title">Saved Requests</h2>
-        <p className="sidebar__empty">Requests you save will show up here (later phase).</p>
-      </div>
+      <SavedRequestsPanel
+        collections={collections.collections}
+        loadError={collections.loadError}
+        activeSavedRequestId={activeSavedRequestId}
+        onNewCollection={savedRequestActions.newCollection}
+        onRenameCollection={savedRequestActions.renameCollection}
+        onDeleteCollection={savedRequestActions.deleteCollection}
+        onOpenRequest={savedRequestActions.openRequest}
+        onRenameRequest={savedRequestActions.renameRequest}
+        onDeleteRequest={savedRequestActions.deleteRequest}
+      />
     </aside>
   )
 }

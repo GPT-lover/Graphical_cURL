@@ -44,7 +44,8 @@ class RequestHistoryServiceTest {
     @BeforeEach
     void setUp() {
         repository.deleteAll();
-        service = new RequestHistoryService(repository, new SensitiveHeaders(), new ObjectMapper());
+        service = new RequestHistoryService(repository,
+                new HeaderSanitizer(new SensitiveHeaders(), new ObjectMapper()));
     }
 
     private static SendRequestDto req(String method, String url, List<HeaderDto> headers, String body) {

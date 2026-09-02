@@ -268,6 +268,158 @@ code {
   opacity: 1;
 }
 
+/* ---- Saved Requests tree ----------------------------------------- */
+
+.tree {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tree-collection__row,
+.tree-request {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.tree-collection__toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.tree-collection__toggle:hover {
+  background: var(--surface-2);
+}
+
+.tree-collection__caret {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+  width: 0.8rem;
+}
+
+.tree-collection__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.tree-collection__count {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+}
+
+.tree-requests {
+  list-style: none;
+  margin: 0 0 0.25rem;
+  padding: 0 0 0 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.tree-requests__empty {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  padding: 0.2rem 0.4rem;
+}
+
+.tree-request__open {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.3rem 0.4rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+}
+
+.tree-request__open:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.tree-request--active .tree-request__open {
+  color: var(--accent);
+  background: rgba(79, 140, 255, 0.1);
+}
+
+.tree-actions {
+  display: flex;
+  gap: 0.1rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.tree-collection__row:hover .tree-actions,
+.tree-request:hover .tree-actions,
+.tree-actions:focus-within {
+  opacity: 1;
+}
+
+.tree-actions .btn--icon {
+  width: 22px;
+  height: 22px;
+  font-size: 0.8rem;
+}
+
+/* ---- Save Request dialog ------------------------------------- */
+
+.modal--narrow {
+  max-width: 420px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.field__label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.field .input {
+  width: 100%;
+}
+
+.editing-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- Backend status pill -------------------------------------------- */
 
 .status {
@@ -360,11 +512,20 @@ code {
   padding: 0.2rem 0.5rem;
 }
 
-/* ---- Editor toolbar (Import cURL, later: Copy as cURL) ---------- */
+/* ---- Editor toolbar (New Request / Import / Save controls) ------ */
 
 .editor-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.editor-toolbar__left,
+.editor-toolbar__right {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
@@ -612,10 +773,82 @@ code {
   border-color: rgba(224, 108, 108, 0.4);
 }
 
-.response-time {
+.response-time,
+.response-size {
   font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--text-muted);
+}
+
+.response-summary {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.response-summary .response-size {
+  margin-left: auto;
+}
+
+/* ---- Response tabs ---------------------------------------- */
+
+.response-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.response-tab {
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.85rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.response-tab:hover {
+  color: var(--text);
+}
+
+.response-tab--active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.response-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.4);
+  border-radius: 3px;
+}
+
+.response-body-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  min-height: 1.6rem;
+}
+
+.response-body-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.response-body-notice {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
+.response-body-notice--warn {
+  color: var(--warn);
 }
 
 .response-warnings {
@@ -695,8 +928,8 @@ code {
 
 .response-body {
   margin: 0;
-  max-height: 460px;
-  overflow: auto;
+  max-height: 520px;
+  overflow: auto; /* scroll a large / long-lined response instead of breaking layout */
   padding: 0.85rem;
   background: var(--bg);
   border: 1px solid var(--border);
