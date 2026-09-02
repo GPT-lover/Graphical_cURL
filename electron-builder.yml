@@ -58,3 +58,11 @@ nsis:
   shortcutName: Graphical cURL
   runAfterFinish: true
   artifactName: Graphical-cURL-Setup-${version}.${ext}
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.developer-tools

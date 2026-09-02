@@ -18,7 +18,8 @@
     "build:backend": "cd backend && gradlew.bat clean bootJar",
     "build:jre": "node electron/scripts/build-jre.mjs",
     "prepackage": "npm run build:frontend && npm run build:backend && npm run build:jre",
-    "electron:build": "npm run prepackage && electron-builder --win --x64",
+    "electron:build:win": "npm run prepackage && electron-builder --win --x64",
+    "electron:build:mac": "npm run prepackage && electron-builder --mac --x64 --arm64",
     "test:backend": "cd backend && gradlew.bat test"
   },
   "devDependencies": {
