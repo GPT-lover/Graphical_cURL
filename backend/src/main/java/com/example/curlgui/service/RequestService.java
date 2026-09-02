@@ -90,25 +90,8 @@ public class RequestService {
         Map<String, String> variables =
                 environmentVariableService.variablesFor(dto.environmentId());
         SendRequestDto resolved = variableResolver.resolveRequest(dto, variables);
-        // From here down, `resolved` is what is actually sent.
 
-        String method = normaliseMethod(resolved.method());
-        URI uri = parseAndValidateUrl(resolved.url());
-        String body = resolved.body() == null ? "" : resolved.body();
-
-        // Log host only - never the full URL (query strings can carry tokens),
-        // never headers, never the body.
-        log.info("Proxying {} request to host \"{}\"", method, uri.getHost());
-
-        List<String> warnings = new ArrayList<>();
-        HttpRequest httpRequest =
-                buildHttpRequest(method, uri, body, resolved.headers(), resolved.cookies(), warnings);
-
-        long startNanos = System.nanoTime();
-        HttpResponse<byte[]> httpResponse = send(httpRequest, uri);
-        long durationMs = Math.round((System.nanoTime() - startNanos) / 1_000_000.0);
-
-        SendResponseDto response = toResponseDto(httpResponse, durationMs, warnings);
+        SendResponseDto response = executeResolved(resolved, true);
 
         // Persist a (sanitised) history row from the ORIGINAL dto (placeholders
         // intact). This must never break a successful request, so any failure
@@ -121,6 +104,38 @@ public class RequestService {
         }
 
         return response;
+    }
+
+    /**
+     * Send an <b>already-resolved</b> request: no {{variable}} substitution and no
+     * History. Shared by {@link #execute} (the normal Send) and the run-multiple
+     * loop, so both use the same HTTP-execution path, timeouts and response
+     * handling. Runs quietly (no per-request "Proxying..." log line).
+     */
+    public SendResponseDto executeResolved(SendRequestDto resolved) {
+        return executeResolved(resolved, false);
+    }
+
+    private SendResponseDto executeResolved(SendRequestDto resolved, boolean logProxyLine) {
+        String method = normaliseMethod(resolved.method());
+        URI uri = parseAndValidateUrl(resolved.url());
+        String body = resolved.body() == null ? "" : resolved.body();
+
+        if (logProxyLine) {
+            // Log host only - never the full URL (query strings can carry
+            // tokens), never headers, never the body.
+            log.info("Proxying {} request to host \"{}\"", method, uri.getHost());
+        }
+
+        List<String> warnings = new ArrayList<>();
+        HttpRequest httpRequest =
+                buildHttpRequest(method, uri, body, resolved.headers(), resolved.cookies(), warnings);
+
+        long startNanos = System.nanoTime();
+        HttpResponse<byte[]> httpResponse = send(httpRequest, uri);
+        long durationMs = Math.round((System.nanoTime() - startNanos) / 1_000_000.0);
+
+        return toResponseDto(httpResponse, durationMs, warnings);
     }
 
     // ------------------------------------------------------------------
@@ -143,7 +158,8 @@ public class RequestService {
      * Rejecting {@code file:}, {@code ftp:}, etc. keeps this from being able to
      * read the backend's own filesystem.
      */
-    private URI parseAndValidateUrl(String rawUrl) {
+    // package-private so RunMultipleService can fail fast on a bad resolved URL
+    URI parseAndValidateUrl(String rawUrl) {
         if (rawUrl == null || rawUrl.isBlank()) {
             throw new InvalidRequestException("URL must not be empty");
         }
