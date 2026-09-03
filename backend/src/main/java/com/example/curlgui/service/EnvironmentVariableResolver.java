@@ -101,6 +101,6 @@ public class EnvironmentVariableResolver {
         }
 
         return new SendRequestDto(original.method(), url, headers, cookies, body,
-                original.environmentId());
+                original.environmentId(), original.curlOptions());
     }
 }

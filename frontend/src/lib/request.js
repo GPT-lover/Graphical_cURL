@@ -35,6 +35,11 @@ export function createInitialRequest() {
     headers: [makeHeader()],
     cookies: [makeCookie()],
     body: '',
+    // Transport options from an imported cURL command (--compressed, --http1.1,
+    // -L, -k, --connect-timeout, --max-time, --proxy). The editor has no UI for
+    // these yet; it just carries them so they reach the backend on Send. null
+    // for a hand-built request.
+    curlOptions: null,
   }
 }
 
@@ -54,5 +59,7 @@ export function toRequestPayload(request) {
       .filter((cookie) => cookie.key.trim() !== '')
       .map((cookie) => ({ key: cookie.key.trim(), value: cookie.value })),
     body: request.body,
+    // Passed straight through to the backend (see createInitialRequest).
+    curlOptions: request.curlOptions ?? null,
   }
 }

@@ -1,19 +1,9 @@
 package com.example.curlgui.service;
 
-import java.io.IOException;
-import java.net.ConnectException;
 import java.net.URI;
-import java.net.UnknownHostException;
-import java.net.http.HttpClient;
-import java.net.http.HttpConnectTimeoutException;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,64 +13,65 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.example.curlgui.dto.CookieDto;
-import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.SendRequestDto;
 import com.example.curlgui.dto.SendResponseDto;
 
 /**
- * Performs the outgoing HTTP request described by a {@link SendRequestDto} using
- * Java's built-in {@link HttpClient}, and maps the result into a
- * {@link SendResponseDto}.
+ * Performs the outgoing HTTP request described by a {@link SendRequestDto} by
+ * running the real {@code curl} executable (via {@link CurlProcessExecutor}) and
+ * maps the result into a {@link SendResponseDto}.
  *
- * <p>{@code @Service} marks this as a Spring-managed component that holds
- * business logic. Spring creates one instance and injects it into the
- * controller. It gets the shared {@link HttpClient} through its constructor
- * (constructor injection - the preferred style: dependencies are explicit and
- * the object can't exist half-built).
+ * <p>Execution moved from {@code java.net.http.HttpClient} to {@code curl}
+ * because some sites behind WAF / bot-fingerprinting (e.g. Vercel's security
+ * checkpoint) rejected the JDK client's TLS / HTTP-2 fingerprint with a 429
+ * challenge while accepting the byte-identical request from CLI curl. This class
+ * still never runs a shell and never disables TLS verification on its own -
+ * {@code -k} is honoured only when it was in the imported command, with a
+ * warning.
  *
- * <p>This class never runs a shell, never touches {@code Runtime.exec}, and never
- * disables TLS. It only validates input and calls {@code HttpClient}.
+ * <p>Responsibilities that did <em>not</em> move: {@code {{variable}}}
+ * resolution (on a temporary copy, so History keeps placeholders), method / URL
+ * validation, and recording a sanitised History row.
  */
 @Service
 public class RequestService {
 
     private static final Logger log = LoggerFactory.getLogger(RequestService.class);
 
-    /** Overall cap on a single request/response exchange. See explanation below. */
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
-
     private static final Set<String> ALLOWED_METHODS =
             Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
-    private final HttpClient httpClient;
+    private final CurlProcessExecutor curlExecutor;
     private final RequestHistoryService historyService;
     private final EnvironmentVariableService environmentVariableService;
     private final EnvironmentVariableResolver variableResolver;
 
-    public RequestService(HttpClient httpClient,
+    public RequestService(CurlProcessExecutor curlExecutor,
                           RequestHistoryService historyService,
                           EnvironmentVariableService environmentVariableService,
                           EnvironmentVariableResolver variableResolver) {
-        this.httpClient = httpClient;
+        this.curlExecutor = curlExecutor;
         this.historyService = historyService;
         this.environmentVariableService = environmentVariableService;
         this.variableResolver = variableResolver;
     }
 
     /**
-     * Resolve {@code {{variables}}}, validate, build an {@link HttpRequest}, send
-     * it, and convert the response.
+     * Resolve {@code {{variables}}}, validate, run the request through curl, and
+     * convert the response.
      *
      * <p>Substitution happens on a <b>temporary copy</b> ({@code resolved}). The
      * original {@code dto} keeps its placeholders and is what Request History
      * records, so no resolved secret is ever persisted. If any placeholder can't
      * be resolved, {@link UnresolvedVariableException} is thrown here - before
-     * {@code HttpClient} is touched - and nothing is sent.
+     * curl is touched - and nothing is sent.
      *
      * <p>Throws {@link InvalidRequestException} for bad input and
-     * {@link RequestExecutionException} for network failures - both handled by
-     * the controller.
+     * {@link RequestExecutionException} for a failure to <em>perform</em> the
+     * request (curl missing / failed to start / timed out / non-zero exit) -
+     * both handled by the controller. A completed HTTP response, including
+     * 404 / 429 / 500, is returned normally.
      */
     public SendResponseDto execute(SendRequestDto dto) {
         if (dto == null) {
@@ -109,7 +100,7 @@ public class RequestService {
     /**
      * Send an <b>already-resolved</b> request: no {{variable}} substitution and no
      * History. Shared by {@link #execute} (the normal Send) and the run-multiple
-     * loop, so both use the same HTTP-execution path, timeouts and response
+     * loop, so both use the same curl-execution path, timeouts and response
      * handling. Runs quietly (no per-request "Proxying..." log line).
      */
     public SendResponseDto executeResolved(SendRequestDto resolved) {
@@ -120,6 +111,7 @@ public class RequestService {
         String method = normaliseMethod(resolved.method());
         URI uri = parseAndValidateUrl(resolved.url());
         String body = resolved.body() == null ? "" : resolved.body();
+        CurlOptionsDto options = CurlOptionsDto.orNone(resolved.curlOptions());
 
         if (logProxyLine) {
             // Log host only - never the full URL (query strings can carry
@@ -128,14 +120,15 @@ public class RequestService {
         }
 
         List<String> warnings = new ArrayList<>();
-        HttpRequest httpRequest =
-                buildHttpRequest(method, uri, body, resolved.headers(), resolved.cookies(), warnings);
+        CurlProcessExecutor.Result result = curlExecutor.execute(
+                method, uri, body, resolved.headers(), resolved.cookies(), options, warnings);
 
-        long startNanos = System.nanoTime();
-        HttpResponse<byte[]> httpResponse = send(httpRequest, uri);
-        long durationMs = Math.round((System.nanoTime() - startNanos) / 1_000_000.0);
+        Charset charset = charsetFromContentType(firstHeader(result.headers(), "content-type"));
+        String decodedBody = new String(result.body(), charset);
 
-        return toResponseDto(httpResponse, durationMs, warnings);
+        return new SendResponseDto(
+                result.statusCode(), result.headers(), decodedBody,
+                result.durationMs(), warnings);
     }
 
     // ------------------------------------------------------------------
@@ -156,7 +149,7 @@ public class RequestService {
      * must have a host. We do NOT block private / loopback addresses - hitting
      * {@code http://localhost:3000} is a normal thing to do with a dev HTTP tool.
      * Rejecting {@code file:}, {@code ftp:}, etc. keeps this from being able to
-     * read the backend's own filesystem.
+     * read the backend's own filesystem or reach non-HTTP services via curl.
      */
     // package-private so RunMultipleService can fail fast on a bad resolved URL
     URI parseAndValidateUrl(String rawUrl) {
@@ -185,131 +178,20 @@ public class RequestService {
     }
 
     // ------------------------------------------------------------------
-    // Build the outgoing request
+    // Response mapping helpers
     // ------------------------------------------------------------------
 
-    private HttpRequest buildHttpRequest(String method, URI uri, String body,
-                                         List<HeaderDto> headers, List<CookieDto> cookies,
-                                         List<String> warnings) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(uri)
-                .timeout(REQUEST_TIMEOUT);
-
-        // Body: send one only if the user actually typed something. This works
-        // for every method - GET/HEAD/OPTIONS simply get BodyPublishers.noBody().
-        HttpRequest.BodyPublisher bodyPublisher = body.isEmpty()
-                ? HttpRequest.BodyPublishers.noBody()
-                : HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8);
-        builder.method(method, bodyPublisher);
-
-        // addHeaders returns any header the user typed literally named "Cookie".
-        String manualCookieHeader = addHeaders(builder, headers, warnings);
-        applyCookies(builder, cookies, manualCookieHeader, warnings);
-
-        return builder.build();
-    }
-
-    /**
-     * Copy the user's headers onto the request. Blank rows are skipped. A header
-     * literally named {@code Cookie} is <em>not</em> added here - it's returned
-     * so {@link #applyCookies} can decide between it and the Cookies section.
-     *
-     * <p>{@code HttpClient} throws {@link IllegalArgumentException} for headers it
-     * refuses to let callers set (e.g. {@code Host}, {@code Content-Length},
-     * {@code Connection}) or for names containing illegal characters - we catch
-     * that, skip the header, and record a warning rather than failing the whole
-     * request.
-     *
-     * @return the value of a manually entered {@code Cookie} header, or {@code null}
-     */
-    private String addHeaders(HttpRequest.Builder builder, List<HeaderDto> headers,
-                              List<String> warnings) {
+    /** Case-insensitive lookup in the flattened response-header map. */
+    private static String firstHeader(Map<String, String> headers, String name) {
         if (headers == null) {
             return null;
         }
-        for (HeaderDto header : headers) {
-            if (header == null) {
-                continue;
-            }
-            String name = header.key() == null ? "" : header.key().trim();
-            if (name.isEmpty() || name.equalsIgnoreCase("Cookie")) {
-                continue; // blank row, or a Cookie header handled via CookieHeader
-            }
-            String value = header.value() == null ? "" : header.value();
-            try {
-                builder.header(name, value);
-            } catch (IllegalArgumentException ex) {
-                warnings.add("Skipped header \"" + name + "\" - it is reserved or malformed "
-                        + "and cannot be set by this client.");
+        for (Map.Entry<String, String> e : headers.entrySet()) {
+            if (e.getKey() != null && e.getKey().equalsIgnoreCase(name)) {
+                return e.getValue();
             }
         }
-        return CookieHeader.extractManualCookieHeader(headers);
-    }
-
-    /**
-     * Set the single {@code Cookie} header for the outgoing request. The decision
-     * (Cookies section vs. a manually typed {@code Cookie} header, duplicate
-     * handling, trimming) lives in {@link CookieHeader#resolve} so it can be
-     * unit-tested without an {@code HttpClient}.
-     */
-    private void applyCookies(HttpRequest.Builder builder, List<CookieDto> cookies,
-                              String manualCookieHeader, List<String> warnings) {
-        CookieHeader.Result resolved = CookieHeader.resolve(cookies, manualCookieHeader);
-        warnings.addAll(resolved.warnings());
-        if (resolved.value() == null) {
-            return; // no cookies supplied - send no Cookie header
-        }
-        try {
-            builder.header("Cookie", resolved.value());
-        } catch (IllegalArgumentException ex) {
-            warnings.add("Could not set the Cookie header on the outgoing request.");
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Send + map the response
-    // ------------------------------------------------------------------
-
-    private HttpResponse<byte[]> send(HttpRequest request, URI uri) {
-        try {
-            // ofByteArray so we can decode the body with whatever charset the
-            // response declares (defaulting to UTF-8).
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-        } catch (HttpConnectTimeoutException ex) {
-            throw fail(uri, ex, "Timed out establishing a connection to the target server");
-        } catch (HttpTimeoutException ex) {
-            throw fail(uri, ex, "The target server did not respond within " + REQUEST_TIMEOUT.toSeconds() + "s");
-        } catch (UnknownHostException ex) {
-            throw fail(uri, ex, "Could not resolve host \"" + uri.getHost() + "\"");
-        } catch (ConnectException ex) {
-            throw fail(uri, ex, "Could not connect to the target server");
-        } catch (IOException ex) {
-            throw fail(uri, ex, "Network error while contacting the target server");
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            throw fail(uri, ex, "The request was interrupted before it completed");
-        }
-    }
-
-    private RequestExecutionException fail(URI uri, Exception cause, String friendlyMessage) {
-        // Log the exception type + message only - not a stack trace, not headers.
-        log.warn("Request to \"{}\" failed: {}: {}",
-                uri.getHost(), cause.getClass().getSimpleName(), cause.getMessage());
-        return new RequestExecutionException(friendlyMessage, cause.getMessage());
-    }
-
-    private SendResponseDto toResponseDto(HttpResponse<byte[]> response, long durationMs,
-                                          List<String> warnings) {
-        // Flatten multi-valued headers ("a", "b") into "a, b" for easy display.
-        Map<String, String> responseHeaders = new LinkedHashMap<>();
-        response.headers().map().forEach((name, values) ->
-                responseHeaders.put(name, String.join(", ", values)));
-
-        Charset charset = charsetFromContentType(
-                response.headers().firstValue("content-type").orElse(null));
-        String body = new String(response.body(), charset);
-
-        return new SendResponseDto(response.statusCode(), responseHeaders, body, durationMs, warnings);
+        return null;
     }
 
     /** Pull {@code charset=...} out of a Content-Type header; default UTF-8. */

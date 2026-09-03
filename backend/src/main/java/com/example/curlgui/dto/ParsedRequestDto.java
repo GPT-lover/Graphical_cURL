@@ -27,6 +27,12 @@ public record ParsedRequestDto(
         List<HeaderDto> headers,
         List<CookieDto> cookies,
         String body,
-        List<String> warnings
+        List<String> warnings,
+        CurlOptionsDto curlOptions
 ) {
+    /** Compact form without {@code curlOptions} (defaults to {@code null}). */
+    public ParsedRequestDto(String method, String url, List<HeaderDto> headers,
+                            List<CookieDto> cookies, String body, List<String> warnings) {
+        this(method, url, headers, cookies, body, warnings, null);
+    }
 }

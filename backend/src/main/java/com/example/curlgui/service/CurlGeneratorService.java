@@ -7,6 +7,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
+import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
 import com.example.curlgui.dto.SendRequestDto;
 
@@ -57,6 +58,35 @@ public class CurlGeneratorService {
         // is not silently turned into a POST.
         if (!("GET".equals(method) && !hasBody)) {
             parts.add("-X " + method);
+        }
+
+        // Transport options preserved from an imported command (CurlOptionsDto).
+        // These round-trip so import -> "Copy as cURL" keeps --compressed etc.
+        CurlOptionsDto options = CurlOptionsDto.orNone(dto.curlOptions());
+        if (options.compressed()) {
+            parts.add("--compressed");
+        }
+        String httpVersionFlag = CurlCommandBuilder.httpVersionFlag(options.httpVersion());
+        if (httpVersionFlag != null) {
+            parts.add(httpVersionFlag);
+        }
+        if (options.followRedirects()) {
+            parts.add("-L");
+        }
+        if (options.insecure()) {
+            parts.add("-k");
+        }
+        if (options.connectTimeoutSeconds() != null && options.connectTimeoutSeconds() > 0) {
+            parts.add("--connect-timeout " + options.connectTimeoutSeconds());
+        }
+        if (options.maxTimeSeconds() != null && options.maxTimeSeconds() > 0) {
+            parts.add("--max-time " + options.maxTimeSeconds());
+        }
+        if (options.hasProxy()) {
+            parts.add("--proxy " + ShellQuote.single(options.proxy()));
+        }
+        if (options.hasProxyUser()) {
+            parts.add("--proxy-user " + ShellQuote.single(options.proxyUser()));
         }
 
         // Headers: order, duplicates and capitalisation are preserved exactly.

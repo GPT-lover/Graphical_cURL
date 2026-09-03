@@ -166,17 +166,35 @@ class CurlParserServiceTest {
     }
 
     @Test
-    void compressedIsIgnoredSilently() {
+    void compressedIsCapturedNotDropped() {
         ParsedRequestDto r = parser.parse("curl 'https://e.com' --compressed");
         assertEquals("GET", r.method());
         assertTrue(r.warnings().isEmpty());
+        assertTrue(r.curlOptions().compressed());
     }
 
     @Test
-    void insecureIsIgnoredWithAWarning() {
+    void insecureIsCapturedWithAWarning() {
         ParsedRequestDto r = parser.parse("curl 'https://e.com' -k");
+        assertTrue(r.curlOptions().insecure());
         assertEquals(1, r.warnings().size());
         assertTrue(r.warnings().get(0).toLowerCase().contains("tls"));
+    }
+
+    @Test
+    void httpVersionAndRedirectAndTimeoutsAreCaptured() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://e.com' --http1.1 -L --connect-timeout 5 --max-time 20");
+        assertEquals("1.1", r.curlOptions().httpVersion());
+        assertTrue(r.curlOptions().followRedirects());
+        assertEquals(5, r.curlOptions().connectTimeoutSeconds());
+        assertEquals(20, r.curlOptions().maxTimeSeconds());
+    }
+
+    @Test
+    void proxyIsCapturedNotRejected() {
+        ParsedRequestDto r = parser.parse("curl 'https://e.com' --proxy http://127.0.0.1:8888");
+        assertEquals("http://127.0.0.1:8888", r.curlOptions().proxy());
     }
 
     @Test

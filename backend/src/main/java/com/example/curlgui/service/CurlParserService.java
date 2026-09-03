@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.example.curlgui.dto.CookieDto;
+import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
 import com.example.curlgui.dto.ParsedRequestDto;
 
@@ -36,26 +37,36 @@ public class CurlParserService {
     private static final Set<String> HTTP_METHODS =
             Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
-    /** Options Java HttpClient handles anyway / that don't belong in the editor. Dropped. */
+    /**
+     * Purely cosmetic / diagnostic options with no effect on the HTTP request the
+     * real {@code curl} executor will send. Dropped silently.
+     *
+     * <p>NOTE: transport options that DO change the request
+     * ({@code --compressed}, {@code --http1.1}, {@code -L}, {@code -k}, ...) are
+     * no longer here - they are captured into {@link CurlOptionsDto} so the
+     * executor can pass them straight through to {@code curl}.
+     */
     private static final Set<String> IGNORED_FLAGS = Set.of(
-            "--compressed", "-s", "--silent", "-S", "--show-error", "-v", "--verbose",
+            "-s", "--silent", "-S", "--show-error", "-v", "--verbose",
             "-i", "--include", "-#", "--progress-bar", "-f", "--fail", "--fail-with-body",
-            "--http1.0", "--http1.1", "--http2", "--http2-prior-knowledge", "-0",
-            "-k", "--insecure", "-L", "--location", "--location-trusted",
             "-g", "--globoff", "-N", "--no-buffer", "-j", "--junk-session-cookies",
             "--no-keepalive", "-4", "--ipv4", "-6", "--ipv6"
     );
 
     /** Ignored options that also consume the following token as their value. */
     private static final Set<String> IGNORED_WITH_VALUE = Set.of(
-            "--connect-timeout", "-m", "--max-time", "--retry", "--retry-delay",
-            "--retry-max-time", "--max-redirs", "--resolve", "--interface", "--limit-rate"
+            "--retry", "--retry-delay", "--retry-max-time", "--max-redirs",
+            "--resolve", "--interface", "--limit-rate"
     );
 
-    /** Options that materially change the HTTP request and that we can't yet represent. Fail. */
+    /**
+     * Options that materially change the HTTP request and that we cannot yet
+     * represent (they need editor concepts the GUI does not have). Fail the
+     * import with a clear message rather than sending a different request.
+     */
     private static final Set<String> UNSUPPORTED = Set.of(
             "-F", "--form", "--form-string", "-T", "--upload-file",
-            "--data-urlencode", "-G", "--get", "-x", "--proxy", "--proxy-user",
+            "--data-urlencode", "-G", "--get",
             "-E", "--cert", "--key", "--cacert", "--pinnedpubkey"
     );
 
@@ -80,6 +91,16 @@ public class CurlParserService {
         StringBuilder body = new StringBuilder();
         boolean hasData = false;
         List<String> warnings = new ArrayList<>();
+
+        // Transport options taken verbatim from the command (see CurlOptionsDto).
+        boolean optCompressed = false;
+        String optHttpVersion = null;
+        boolean optFollowRedirects = false;
+        boolean optInsecure = false;
+        Integer optConnectTimeout = null;
+        Integer optMaxTime = null;
+        String optProxy = null;
+        String optProxyUser = null;
 
         int i = 0;
         // Drop a leading "curl" / "curl.exe".
@@ -170,6 +191,49 @@ public class CurlParserService {
                         url = v;
                     }
                 }
+
+                // ---- transport options: preserved into CurlOptionsDto ----
+                case "--compressed" -> optCompressed = true;
+                case "--http1.0", "-0" -> optHttpVersion = "1.0";
+                case "--http1.1" -> optHttpVersion = "1.1";
+                case "--http2" -> optHttpVersion = "2";
+                case "--http2-prior-knowledge" -> optHttpVersion = "2-prior-knowledge";
+                case "-L", "--location" -> optFollowRedirects = true;
+                case "--location-trusted" -> {
+                    optFollowRedirects = true;
+                    warnings.add("Imported --location-trusted as --location; credentials are "
+                            + "still only sent to the original host on redirects.");
+                }
+                case "-k", "--insecure" -> {
+                    optInsecure = true;
+                    warnings.add("This request disables TLS certificate verification (-k), "
+                            + "matching the imported command.");
+                }
+                case "--connect-timeout" -> {
+                    optConnectTimeout = parseSeconds(value(option, inlineValue, tokens, i), warnings, option);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                }
+                case "-m", "--max-time" -> {
+                    optMaxTime = parseSeconds(value(option, inlineValue, tokens, i), warnings, option);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                }
+                case "-x", "--proxy" -> {
+                    optProxy = value(option, inlineValue, tokens, i);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                }
+                case "--proxy-user" -> {
+                    optProxyUser = value(option, inlineValue, tokens, i);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                }
+
                 default -> {
                     if (DATA_OPTIONS.contains(option)) {
                         String v = value(option, inlineValue, tokens, i);
@@ -216,11 +280,32 @@ public class CurlParserService {
             method = hasData ? "POST" : "GET";
         }
 
-        // Counts only - never values.
-        log.info("Imported cURL: method={}, headers={}, cookies={}, hasBody={}",
-                method, headers.size(), cookies.size(), body.length() > 0);
+        CurlOptionsDto options = new CurlOptionsDto(
+                optCompressed, optHttpVersion, optFollowRedirects, optInsecure,
+                optConnectTimeout, optMaxTime, optProxy, optProxyUser);
 
-        return new ParsedRequestDto(method, url, headers, cookies, body.toString(), warnings);
+        // Counts / flags only - never values, never the proxy string.
+        log.info("Imported cURL: method={}, headers={}, cookies={}, hasBody={}, "
+                        + "compressed={}, httpVersion={}, followRedirects={}, insecure={}, proxy={}",
+                method, headers.size(), cookies.size(), body.length() > 0,
+                optCompressed, optHttpVersion, optFollowRedirects, optInsecure, optProxy != null);
+
+        return new ParsedRequestDto(method, url, headers, cookies, body.toString(), warnings, options);
+    }
+
+    /** Parse a {@code --connect-timeout}/{@code --max-time} value into whole seconds. */
+    private Integer parseSeconds(String raw, List<String> warnings, String option) {
+        try {
+            double seconds = Double.parseDouble(raw.trim());
+            if (seconds <= 0) {
+                warnings.add("Ignored a non-positive " + option + " value.");
+                return null;
+            }
+            return (int) Math.ceil(seconds);
+        } catch (NumberFormatException ex) {
+            warnings.add("Ignored a non-numeric " + option + " value.");
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -304,14 +389,9 @@ public class CurlParserService {
     }
 
     private void noteIgnoredFlag(String option, List<String> warnings) {
-        switch (option) {
-            case "-k", "--insecure" ->
-                    warnings.add("Ignored --insecure: this tool always verifies TLS certificates.");
-            case "-L", "--location", "--location-trusted" ->
-                    warnings.add("Ignored --location: redirects are not followed automatically.");
-            default -> {
-                // Cosmetic (--compressed, -s, -v, ...): drop silently.
-            }
-        }
+        // Everything routed here is cosmetic / diagnostic (-s, -v, -i, --fail,
+        // ...): it has no effect on the request curl will send, so drop it
+        // silently. Request-affecting options are handled in parse()'s switch and
+        // captured into CurlOptionsDto instead.
     }
 }

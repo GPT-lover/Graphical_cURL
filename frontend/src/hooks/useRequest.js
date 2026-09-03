@@ -104,6 +104,10 @@ export function useRequest() {
           ? incoming.cookies.map((cookie) => makeCookie(cookie.key, cookie.value))
           : [makeCookie()],
       body: incoming.body ?? '',
+      // cURL import supplies curlOptions (--compressed, --http1.1, -L, -k,
+      // timeouts, --proxy); History / Saved Requests do not, so it resets to
+      // null there. Carried opaquely; no editor UI.
+      curlOptions: incoming.curlOptions ?? null,
     })
   }, [])
 

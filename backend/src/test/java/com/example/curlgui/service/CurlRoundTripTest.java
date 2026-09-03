@@ -23,7 +23,8 @@ class CurlRoundTripTest {
     private ParsedRequestDto roundTrip(String curl) {
         ParsedRequestDto first = parser.parse(curl);
         SendRequestDto asRequest = new SendRequestDto(
-                first.method(), first.url(), first.headers(), first.cookies(), first.body(), null);
+                first.method(), first.url(), first.headers(), first.cookies(), first.body(),
+                null, first.curlOptions());
         String generated = generator.generate(asRequest);
         return parser.parse(generated);
     }

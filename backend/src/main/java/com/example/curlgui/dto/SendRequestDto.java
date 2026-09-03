@@ -34,6 +34,17 @@ public record SendRequestDto(
         List<HeaderDto> headers,
         List<CookieDto> cookies,
         String body,
-        Long environmentId
+        Long environmentId,
+        CurlOptionsDto curlOptions
 ) {
+    /**
+     * Compact form without {@code curlOptions} (defaults to {@code null}). Keeps
+     * every existing call-site and test that predates transport options working
+     * unchanged; the frontend supplies {@code curlOptions} in the JSON when an
+     * imported request carried transport flags.
+     */
+    public SendRequestDto(String method, String url, List<HeaderDto> headers,
+                          List<CookieDto> cookies, String body, Long environmentId) {
+        this(method, url, headers, cookies, body, environmentId, null);
+    }
 }
