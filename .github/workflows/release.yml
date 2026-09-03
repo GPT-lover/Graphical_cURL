@@ -114,7 +114,7 @@ jobs:
             runner: macos-14 # Apple Silicon
             required: true
           - arch: x64
-            runner: macos-13 # Intel. GitHub is winding these down; if this
+            runner: macos-15-intel # Intel. GitHub is winding these down; if this
             #                   runner disappears, delete this matrix entry to
             #                   ship arm64-only (the release still succeeds).
             required: false
