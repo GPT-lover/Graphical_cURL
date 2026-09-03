@@ -1,7 +1,7 @@
 {
   "name": "graphical-curl",
   "productName": "Graphical cURL",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Desktop shell (Electron) around the Graphical cURL React + Spring Boot app.",
   "private": true,
   "author": "Graphical cURL",
