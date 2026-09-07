@@ -41,6 +41,17 @@ import jakarta.annotation.PreDestroy;
  * a chain of 20 requests looped 5000 times must not try to spawn 100000 OS
  * processes simultaneously.
  *
+ * <h3>Cooldown between iterations</h3>
+ * If {@code cooldownMs > 0}, the runner pauses for that long <b>between complete
+ * loop iterations</b> - after every request of iteration N has been dispatched,
+ * before the first request of iteration N+1 is dispatched. There is no pause
+ * before the first iteration or after the last one, and never a pause between
+ * the individual requests inside one iteration (dispatch order there is
+ * unchanged: still immediate, still never waiting on a response). The wait runs
+ * on the caller's (per-chain orchestrator) thread and is polled in short slices
+ * so a {@code Stop} during the cooldown takes effect promptly instead of
+ * blocking for the whole interval.
+ *
  * <h3>Error handling</h3>
  * A failed request (network error, non-2xx, whatever {@code oneRun} reports) is
  * recorded on its own slot and does not stop or skip any other dispatch - every
@@ -73,11 +84,14 @@ class ChainRunner {
      *
      * @param resolvedChain the chain's requests, in dispatch order, already
      *                      variable-resolved
+     * @param cooldownMs    pause between complete loop iterations, in ms; {@code
+     *                      0} disables it (behaviour identical to before this
+     *                      parameter existed)
      * @param oneRun        performs one request and reports its outcome; never
      *                      throws (a failure is reported as a {@code RunOutcome}
      *                      with a non-null {@code error})
      */
-    void execute(ChainState state, List<SendRequestDto> resolvedChain,
+    void execute(ChainState state, List<SendRequestDto> resolvedChain, long cooldownMs,
                 Function<SendRequestDto, RunOutcome> oneRun) {
         int chainLength = resolvedChain.size();
         List<Future<?>> futures = new ArrayList<>();
@@ -103,6 +117,12 @@ class ChainRunner {
                 // Deliberately NOT awaiting `futures`' last element here - dispatching
                 // the next request must not wait for this one's response.
             }
+
+            // Cooldown BETWEEN iterations only: not after the final one, and not
+            // if a Stop has already been requested.
+            if (cooldownMs > 0 && iteration < state.totalIterations && !state.cancelled.get()) {
+                cooldown(state, cooldownMs);
+            }
         }
 
         // Every request has been dispatched (or the chain was stopped); now let
@@ -114,6 +134,30 @@ class ChainRunner {
             } catch (Exception ignored) {
                 // an individual task failing is already reflected in its slot
             }
+        }
+    }
+
+    /**
+     * Wait out the cooldown, but in short slices so a {@code Stop} pressed
+     * mid-cooldown is noticed within ~50ms rather than after the whole interval.
+     * Runs on the per-chain orchestrator thread (never an app-wide one).
+     */
+    private static void cooldown(ChainState state, long cooldownMs) {
+        state.coolingDown = true;
+        try {
+            long deadlineNanos = System.nanoTime() + cooldownMs * 1_000_000L;
+            long remainingMs;
+            while (!state.cancelled.get()
+                    && (remainingMs = (deadlineNanos - System.nanoTime()) / 1_000_000L) > 0) {
+                try {
+                    Thread.sleep(Math.min(50L, remainingMs));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        } finally {
+            state.coolingDown = false;
         }
     }
 

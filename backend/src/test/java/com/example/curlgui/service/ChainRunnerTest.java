@@ -44,7 +44,11 @@ class ChainRunnerTest {
     }
 
     private static ChainState state(int chainLength, int loops) {
-        return new ChainState("test", chainLength, loops);
+        return new ChainState("test", chainLength, loops, 0L);
+    }
+
+    private static ChainState state(int chainLength, int loops, long cooldownMs) {
+        return new ChainState("test", chainLength, loops, cooldownMs);
     }
 
     private static RunOutcome ok(long ms) {
@@ -66,7 +70,7 @@ class ChainRunnerTest {
         ChainState s = state(1, 1);
         List<SendRequestDto> chain = List.of(req("https://example.com/only"));
 
-        runner.execute(s, chain, r -> ok(5));
+        runner.execute(s, chain, 0L, r -> ok(5));
 
         assertEquals(1, s.dispatched.get());
         assertEquals(1, s.completed.get());
@@ -120,7 +124,7 @@ class ChainRunnerTest {
             throws InterruptedException {
         int total = s.totalDispatches;
         CountDownLatch release = new CountDownLatch(1);
-        Thread loop = new Thread(() -> runner.execute(s, chain, r -> {
+        Thread loop = new Thread(() -> runner.execute(s, chain, 0L, r -> {
             awaitUninterruptibly(release, 5000);
             return ok(1);
         }));
@@ -176,7 +180,7 @@ class ChainRunnerTest {
             return ok(1);
         };
 
-        runner.execute(s, chain, oneRun);
+        runner.execute(s, chain, 0L, oneRun);
 
         assertEquals(2, s.completed.get());
     }
@@ -201,7 +205,7 @@ class ChainRunnerTest {
         // (1,0) (1,1) (2,0) (2,1) (3,0) (3,1) - i.e. R1 R2 R1 R2 R1 R2.
         int total = s.totalDispatches;
         CountDownLatch release = new CountDownLatch(1);
-        Thread loop = new Thread(() -> runner.execute(s, chain, r -> {
+        Thread loop = new Thread(() -> runner.execute(s, chain, 0L, r -> {
             awaitUninterruptibly(release, 5000);
             return ok(1);
         }));
@@ -232,7 +236,7 @@ class ChainRunnerTest {
         List<SendRequestDto> chain = List.of(req("https://example.com/r1"), req("https://example.com/r2"));
 
         long t0 = System.nanoTime();
-        runner.execute(s, chain, r -> {
+        runner.execute(s, chain, 0L, r -> {
             sleep(40);
             return ok(40);
         });
@@ -254,7 +258,7 @@ class ChainRunnerTest {
         // Make request-index 0 slower than request-index 1, and later iterations
         // faster than earlier ones, so completion order is scrambled relative to
         // dispatch order.
-        runner.execute(s, chain, r -> {
+        runner.execute(s, chain, 0L, r -> {
             if (r.url().endsWith("/r1")) {
                 sleep(30);
             }
@@ -289,7 +293,7 @@ class ChainRunnerTest {
                 req("https://example.com/r1"), req("https://example.com/r2"), req("https://example.com/r3"));
         ConcurrentLinkedQueue<String> order = new ConcurrentLinkedQueue<>();
 
-        runner.execute(s, chain, r -> {
+        runner.execute(s, chain, 0L, r -> {
             order.add(r.url());
             if (r.url().endsWith("/r1")) {
                 return new RunOutcome(500, 1L, null); // R1 "fails" (server error)
@@ -314,7 +318,7 @@ class ChainRunnerTest {
         ChainState s = state(2, 1);
         List<SendRequestDto> chain = List.of(req("https://example.com/r1"), req("https://example.com/r2"));
 
-        runner.execute(s, chain, r -> r.url().endsWith("/r1")
+        runner.execute(s, chain, 0L, r -> r.url().endsWith("/r1")
                 ? new RunOutcome(null, null, "Network Error")
                 : ok(1));
 
@@ -338,7 +342,7 @@ class ChainRunnerTest {
         CountDownLatch dispatched = new CountDownLatch(1);
         CountDownLatch releaseResponse = new CountDownLatch(1);
 
-        Thread loop = new Thread(() -> runner.execute(s, chain, r -> {
+        Thread loop = new Thread(() -> runner.execute(s, chain, 0L, r -> {
             dispatched.countDown();
             awaitUninterruptibly(releaseResponse, 2000);
             return ok(1);
@@ -385,7 +389,7 @@ class ChainRunnerTest {
             return ok(10);
         };
 
-        Thread loop = new Thread(() -> runner.execute(s, chain, oneRun));
+        Thread loop = new Thread(() -> runner.execute(s, chain, 0L, oneRun));
         loop.start();
         Thread.sleep(15); // let the first small batch actually start sending
         s.cancelled.set(true);
@@ -396,5 +400,98 @@ class ChainRunnerTest {
         assertTrue(actuallySent.get() > 0, "some requests should have actually been sent");
         assertTrue(actuallySent.get() < 100, "should not have sent all 100 after stop");
         assertEquals(100, s.completed.get(), "every slot still resolves - sent ones normally, the rest as cancelled");
+    }
+
+    // ---- cooldown between loop iterations ---------------------------
+
+    /**
+     * cooldownMs = 0 must behave exactly as before: no pause anywhere, and the
+     * chain never reports itself as "cooling down".
+     */
+    @Test
+    void zeroCooldownAddsNoDelayAndNeverReportsCoolingDown() {
+        ChainState s = state(2, 4, 0L); // 8 dispatches over 4 iterations
+        List<SendRequestDto> chain = List.of(req("https://example.com/r1"), req("https://example.com/r2"));
+
+        long t0 = System.nanoTime();
+        runner.execute(s, chain, 0L, r -> ok(1));
+        long totalMs = (System.nanoTime() - t0) / 1_000_000;
+
+        assertEquals(8, s.completed.get());
+        assertFalse(s.coolingDown, "must not be left in the cooling-down state");
+        assertTrue(totalMs < 150, "zero cooldown should add no measurable delay: " + totalMs + "ms");
+    }
+
+    /**
+     * With a positive cooldown and N iterations there must be exactly N-1
+     * pauses: one between each pair of consecutive iterations, none before the
+     * first and none after the last.
+     */
+    @Test
+    void positiveCooldownPausesBetweenIterationsButNotAfterTheLast() {
+        long cooldownMs = 100L;
+        ChainState s = state(2, 3, cooldownMs); // 3 iterations => expect 2 cooldowns
+        List<SendRequestDto> chain = List.of(req("https://example.com/r1"), req("https://example.com/r2"));
+
+        long t0 = System.nanoTime();
+        runner.execute(s, chain, cooldownMs, r -> ok(1));
+        long totalMs = (System.nanoTime() - t0) / 1_000_000;
+
+        assertEquals(6, s.completed.get());
+        assertFalse(s.coolingDown);
+        assertTrue(totalMs >= 2 * cooldownMs - 30,
+                "expected at least two ~" + cooldownMs + "ms cooldowns, took only " + totalMs + "ms");
+        assertTrue(totalMs < 3 * cooldownMs,
+                "took " + totalMs + "ms - looks like a cooldown also ran after the final iteration");
+    }
+
+    /**
+     * More direct check that nothing waits after the final iteration: the gap
+     * between the last request being handed to {@code oneRun} and {@code
+     * execute} returning must be far smaller than one cooldown.
+     */
+    @Test
+    void noCooldownRunsAfterTheFinalIteration() {
+        long cooldownMs = 200L;
+        ChainState s = state(1, 3, cooldownMs);
+        List<SendRequestDto> chain = List.of(req("https://example.com/only"));
+        java.util.concurrent.atomic.AtomicLong lastDispatchNanos = new java.util.concurrent.atomic.AtomicLong();
+
+        runner.execute(s, chain, cooldownMs, r -> {
+            lastDispatchNanos.set(System.nanoTime());
+            return ok(1);
+        });
+        long tailMs = (System.nanoTime() - lastDispatchNanos.get()) / 1_000_000;
+
+        assertEquals(3, s.completed.get());
+        assertTrue(tailMs < cooldownMs / 2,
+                "execute() returned " + tailMs + "ms after the last dispatch - a trailing cooldown ran");
+    }
+
+    /**
+     * A Stop pressed while the runner is waiting out a cooldown must break the
+     * wait promptly (not block for the whole interval) and must not dispatch any
+     * further iterations.
+     */
+    @Test
+    void stopDuringCooldownEndsPromptlyAndDispatchesNoFurtherIterations() throws InterruptedException {
+        long cooldownMs = 5000L; // deliberately long; the test must not wait this out
+        ChainState s = state(2, 5, cooldownMs); // would be 10 dispatches without the stop
+        List<SendRequestDto> chain = List.of(req("https://example.com/r1"), req("https://example.com/r2"));
+
+        Thread loop = new Thread(() -> runner.execute(s, chain, cooldownMs, r -> ok(1)));
+        long t0 = System.nanoTime();
+        loop.start();
+
+        assertTrue(waitUntil(() -> s.coolingDown, 2000), "runner never entered the cooldown");
+        s.cancelled.set(true);
+        loop.join(1000);
+        long totalMs = (System.nanoTime() - t0) / 1_000_000;
+
+        assertFalse(loop.isAlive(), "cooldown was not cancellable - loop still running after Stop");
+        assertTrue(totalMs < cooldownMs, "Stop did not cut the cooldown short: " + totalMs + "ms");
+        assertFalse(s.coolingDown, "must not be left in the cooling-down state after Stop");
+        assertEquals(2, s.dispatched.get(),
+                "only the first iteration's requests should have been dispatched before the stop");
     }
 }

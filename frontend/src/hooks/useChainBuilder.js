@@ -3,17 +3,24 @@ import { useCallback, useState } from 'react'
 let nextStepId = 1
 
 /**
- * Holds the ordered list of requests that make up a "Request Chain" and the
- * loop count, plus small helpers to add/remove/reorder/edit steps.
+ * Holds the ordered list of requests that make up a "Request Chain", the loop
+ * count and the between-loops cooldown, plus small helpers to
+ * add/remove/reorder/edit steps.
  *
  * A step is a plain { id, method, url, headers, body } snapshot - the same
  * shape `toRequestPayload()` produces for the main editor (minus cookies,
  * which chain steps don't carry; see App.jsx's handleAddToChain). `id` is a
  * UI-only React key, stripped before the chain is sent to the backend.
+ *
+ * `cooldown` is the pause (in ms, as a string for the <input>) applied BETWEEN
+ * complete loop iterations - never between the requests inside one iteration,
+ * and never after the last iteration. '0' (the default) means no cooldown and
+ * preserves the original behaviour exactly.
  */
 export function useChainBuilder() {
   const [steps, setSteps] = useState([])
   const [loops, setLoops] = useState('1')
+  const [cooldown, setCooldown] = useState('0')
 
   const addStep = useCallback((snapshot) => {
     setSteps((prev) => [...prev, { id: nextStepId++, ...snapshot }])
@@ -45,5 +52,16 @@ export function useChainBuilder() {
 
   const clearSteps = useCallback(() => setSteps([]), [])
 
-  return { steps, loops, setLoops, addStep, removeStep, updateStep, moveStep, clearSteps }
+  return {
+    steps,
+    loops,
+    setLoops,
+    cooldown,
+    setCooldown,
+    addStep,
+    removeStep,
+    updateStep,
+    moveStep,
+    clearSteps,
+  }
 }

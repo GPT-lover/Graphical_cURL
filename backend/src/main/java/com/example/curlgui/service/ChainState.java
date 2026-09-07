@@ -40,10 +40,14 @@ class ChainState {
     final int chainLength;
     final int totalIterations;
     final int totalDispatches;
+    /** Pause between complete loop iterations, in ms; 0 = none (original behaviour). */
+    final long cooldownMs;
     final long startedAtNanos = System.nanoTime();
 
     volatile long finishedAtNanos;
     volatile Status status = Status.RUNNING;
+    /** True only while {@link ChainRunner} is waiting out the cooldown between iterations. */
+    volatile boolean coolingDown;
     volatile long lastTouchedAtMillis = System.currentTimeMillis();
 
     final AtomicBoolean cancelled = new AtomicBoolean(false);
@@ -56,10 +60,11 @@ class ChainState {
     private final List<Slot> slots;
     private final List<Integer> changeLog = Collections.synchronizedList(new ArrayList<>());
 
-    ChainState(String id, int chainLength, int totalIterations) {
+    ChainState(String id, int chainLength, int totalIterations, long cooldownMs) {
         this.id = id;
         this.chainLength = chainLength;
         this.totalIterations = totalIterations;
+        this.cooldownMs = cooldownMs;
         this.totalDispatches = chainLength * totalIterations;
         this.slots = new ArrayList<>(Collections.nCopies(totalDispatches, null));
     }

@@ -104,7 +104,7 @@ export default function App() {
   // Start the chain: each step already carries its own method/url/headers/body:
   // just attach the active environment so {{variables}} resolve the same way
   // Send and Run Multiple do.
-  function handleRunChain({ requests, loops }) {
+  function handleRunChain({ requests, loops, cooldownMs }) {
     chainRun.start({
       requests: requests.map((step) => ({
         method: step.method,
@@ -114,6 +114,7 @@ export default function App() {
         environmentId: environments.activeEnvironmentId ?? null,
       })),
       loops,
+      cooldownMs,
     })
   }
 

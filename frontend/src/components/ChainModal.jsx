@@ -3,6 +3,7 @@ import { HTTP_METHODS } from '../constants/httpMethods.js'
 
 const MAX_LOOPS = 5000
 const MAX_CHAIN_LENGTH = 20
+const MAX_COOLDOWN_MS = 60000
 
 function phaseClass(result) {
   if (result.classification == null) return 'pending'
@@ -75,8 +76,17 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
       setFormError(`The maximum is ${MAX_LOOPS} loops.`)
       return
     }
+    const cooldownMs = Number(chain.cooldown)
+    if (!Number.isInteger(cooldownMs) || cooldownMs < 0) {
+      setFormError('Cooldown must be a whole number of milliseconds, 0 or more.')
+      return
+    }
+    if (cooldownMs > MAX_COOLDOWN_MS) {
+      setFormError(`Cooldown must be ${MAX_COOLDOWN_MS} ms or less.`)
+      return
+    }
     setFormError(null)
-    onRun({ requests: chain.steps, loops: n })
+    onRun({ requests: chain.steps, loops: n, cooldownMs })
   }
 
   const running = run.phase === 'running'
@@ -116,7 +126,8 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
           <>
             <p className="modal__hint">
               Requests are dispatched in this order without waiting for the previous
-              request&rsquo;s response. The whole chain repeats for the given number of loops.
+              request&rsquo;s response. The whole chain repeats for the given number of loops,
+              pausing for the cooldown between one iteration and the next.
             </p>
 
             <div className="chain-steps">
@@ -201,6 +212,18 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
               />
             </label>
 
+            <label className="field">
+              <span className="field__label">Cooldown between loops (ms)</span>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max={MAX_COOLDOWN_MS}
+                value={chain.cooldown}
+                onChange={(e) => chain.setCooldown(e.target.value)}
+              />
+            </label>
+
             {formError && (
               <div className="modal__error" role="alert">
                 {formError}
@@ -253,7 +276,13 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
               </span>
               <span className="run-progress__mode">
                 {run.progress.chainLength} request(s) × {run.progress.totalIterations} loop(s)
+                {run.progress.cooldownMs > 0 && `, ${run.progress.cooldownMs} ms cooldown`}
               </span>
+              {running && run.progress.coolingDown && (
+                <span className="run-progress__stat">
+                  Waiting {run.progress.cooldownMs} ms before the next loop…
+                </span>
+              )}
             </div>
 
             {finished && run.summary && (

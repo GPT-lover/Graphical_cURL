@@ -11,6 +11,8 @@ const EMPTY_PROGRESS = {
   successful: 0,
   redirects: 0,
   failed: 0,
+  cooldownMs: 0,
+  coolingDown: false,
 }
 
 function slotKey(result) {
@@ -84,6 +86,8 @@ export function useChain() {
         successful: s.successful,
         redirects: s.redirects,
         failed: s.failed,
+        cooldownMs: s.cooldownMs ?? 0,
+        coolingDown: s.coolingDown ?? false,
       })
 
       if (s.status === 'RUNNING') {
@@ -114,6 +118,7 @@ export function useChain() {
         totalIterations: payload.loops,
         chainLength: payload.requests.length,
         totalDispatches: payload.loops * payload.requests.length,
+        cooldownMs: payload.cooldownMs ?? 0,
       })
       setPhase('running')
       try {

@@ -33,4 +33,24 @@ class ChainServiceValidationTest {
         assertEquals(5000, ChainService.requireLoops(5000));
         assertThrows(InvalidRequestException.class, () -> ChainService.requireLoops(5001));
     }
+
+    @Test
+    void missingOrNullCooldownMeansZero() {
+        assertEquals(0L, ChainService.requireCooldown(null));
+        assertEquals(0L, ChainService.requireCooldown(0L));
+    }
+
+    @Test
+    void positiveCooldownIsAcceptedUpToTheMaximum() {
+        assertEquals(1000L, ChainService.requireCooldown(1000L));
+        assertEquals(ChainService.MAX_COOLDOWN_MS, ChainService.requireCooldown(ChainService.MAX_COOLDOWN_MS));
+    }
+
+    @Test
+    void negativeOrOverMaxCooldownIsRejected() {
+        assertThrows(InvalidRequestException.class, () -> ChainService.requireCooldown(-1L));
+        assertThrows(InvalidRequestException.class, () -> ChainService.requireCooldown(-1000L));
+        assertThrows(InvalidRequestException.class,
+                () -> ChainService.requireCooldown(ChainService.MAX_COOLDOWN_MS + 1));
+    }
 }

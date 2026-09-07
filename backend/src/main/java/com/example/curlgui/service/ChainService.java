@@ -56,6 +56,8 @@ public class ChainService {
     static final int MAX_LOOPS = 5000;
     /** Extra guard on top of the two limits above: chainLength * loops. */
     static final int MAX_TOTAL_DISPATCHES = 20_000;
+    /** Upper bound on the between-iterations cooldown; matches run-multiple's delay cap. */
+    static final long MAX_COOLDOWN_MS = 60_000;
     private static final long RETENTION_MS = 10 * 60 * 1000L;
 
     private final RequestService requestService;
@@ -92,6 +94,7 @@ public class ChainService {
         }
         int chainLength = requireChainLength(dto.requests().size());
         int loops = requireLoops(dto.loops());
+        long cooldownMs = requireCooldown(dto.cooldownMs());
         if (chainLength * loops > MAX_TOTAL_DISPATCHES) {
             throw new InvalidRequestException(
                     "This chain would dispatch " + (chainLength * loops) + " requests; the maximum is "
@@ -113,11 +116,11 @@ public class ChainService {
         }
 
         String id = UUID.randomUUID().toString();
-        ChainState state = new ChainState(id, chainLength, loops);
+        ChainState state = new ChainState(id, chainLength, loops, cooldownMs);
         chains.put(id, state);
 
         orchestrators.submit(() -> runChain(state, resolved));
-        log.info("Chain started: {} request(s) x {} loop(s)", chainLength, loops);
+        log.info("Chain started: {} request(s) x {} loop(s), {} ms cooldown", chainLength, loops, cooldownMs);
         return new ChainStartedDto(id);
     }
 
@@ -134,6 +137,8 @@ public class ChainService {
                 state.successful.get(),
                 state.redirects.get(),
                 state.failed.get(),
+                state.cooldownMs,
+                state.status == ChainState.Status.RUNNING && state.coolingDown,
                 state.resultsFrom(offset),
                 state.status == ChainState.Status.RUNNING ? null : state.summary());
     }
@@ -156,7 +161,7 @@ public class ChainService {
             }
         };
         try {
-            chainRunner.execute(state, resolved, oneRun);
+            chainRunner.execute(state, resolved, state.cooldownMs, oneRun);
         } catch (RuntimeException ex) {
             log.warn("Chain run ended abnormally: {}", ex.getClass().getSimpleName());
         } finally {
@@ -203,6 +208,22 @@ public class ChainService {
             throw new InvalidRequestException("Loop count must not exceed " + MAX_LOOPS + ".");
         }
         return loops;
+    }
+
+    /**
+     * Cooldown between loop iterations. A missing/null value means 0 (no
+     * cooldown - the original behaviour), so old clients and saved chains keep
+     * working unchanged.
+     */
+    static long requireCooldown(Long cooldownMs) {
+        long c = cooldownMs == null ? 0L : cooldownMs;
+        if (c < 0) {
+            throw new InvalidRequestException("Cooldown must not be negative.");
+        }
+        if (c > MAX_COOLDOWN_MS) {
+            throw new InvalidRequestException("Cooldown must not exceed " + MAX_COOLDOWN_MS + " ms.");
+        }
+        return c;
     }
 
     private static ThreadFactory daemon(String name) {
