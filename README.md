@@ -1,218 +1,751 @@
-# cURL GUI
+# Graphical cURL
 
-A local, single-user desktop-style GUI for building, sending, saving, and
-converting HTTP / cURL requests. Learning project.
+A lightweight, local, single-user desktop GUI for building, importing, sending, saving, and exporting HTTP/cURL requests.
 
-- **Frontend:** React 19 + Vite
-- **Backend:** Java + Spring Boot 3.5 (Gradle)
-- **Database:** SQLite (embedded file, no server) via Spring Data JPA
-- **Outbound HTTP:** Java's built-in `java.net.http.HttpClient` (added in Phase 3)
+Graphical cURL is designed as a simple alternative to tools such as Postman and Insomnia, with a particular focus on working with **cURL commands** and understanding what happens when an HTTP request is sent.
 
-The frontend never calls the user's target URL directly. It only calls this
-project's Spring Boot backend, which performs the outbound HTTP request.
+> **Status:** Active development — v1.0.0
 
+## Features
+
+* **HTTP request editor**
+
+  * GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS
+  * URL, headers, cookies, and request body
+* **cURL import**
+
+  * Import cURL commands directly into the request editor
+  * Handles quoted arguments, headers, cookies, request bodies, and multiline commands
+* **cURL export**
+
+  * Convert an edited request back into a readable cURL command
+* **HTTP execution**
+
+  * Requests are executed locally through the system's `curl` executable
+  * HTTP status codes such as `404`, `429`, and `500` are displayed normally rather than treated as application errors
+* **Request history**
+
+  * Automatically records recent requests
+  * Up to 100 history entries
+  * Sensitive headers and cookies are not persisted
+* **Saved requests**
+
+  * Save requests for later use
+  * Organise requests into collections
+* **Environment variables**
+
+  * Use variables such as `{{API_URL}}` or `{{AUTH_TOKEN}}`
+  * Variables can be used in URLs, headers, cookies, and request bodies
+  * Sensitive variables can be masked
+* **Response viewer**
+
+  * Response body, headers, and raw response views
+  * JSON formatting
+  * Response metadata including status and duration
+* **Run Multiple**
+
+  * Execute a request repeatedly
+  * Sequential or bounded-parallel execution
+  * Progress and success/failure statistics
+* **Desktop application**
+
+  * Windows installer
+  * macOS DMG builds
+  * Electron desktop shell
+  * Bundled Java runtime
+  * No Java, Node.js, or Gradle required by end users
+
+---
+
+## Architecture
+
+Graphical cURL consists of a React frontend, a Spring Boot backend, SQLite storage, and the system cURL executable.
+
+```text
+┌──────────────────────────────────────────────┐
+│                 Electron                     │
+│          Desktop shell / process manager     │
+│                                              │
+│  ┌────────────────────────────────────────┐  │
+│  │          React + Vite frontend         │  │
+│  │                                        │  │
+│  │ Request editor                         │  │
+│  │ History / Saved Requests / Environments│  │
+│  │ Response viewer                        │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │ REST / JSON           │
+│                      ▼                       │
+│  ┌────────────────────────────────────────┐  │
+│  │          Spring Boot backend            │  │
+│  │                                        │  │
+│  │ Controllers                            │  │
+│  │ Request services                       │  │
+│  │ cURL parser / generator                │  │
+│  │ Environment resolution                 │  │
+│  │ History / Saved Request persistence    │  │
+│  └───────────────┬───────────────┬────────┘  │
+│                  │               │            │
+│                  ▼               ▼            │
+│              SQLite         curl / curl.exe  │
+│                              │                │
+└──────────────────────────────┼────────────────┘
+                               ▼
+                         Target HTTP server
 ```
-React (Vite dev server :5173)
-   |  REST / JSON   (CORS allows localhost:5173)
-   v
-Spring Boot (:8080)
-   |-- controller/  REST endpoints
-   |-- service/     business logic        (Phase 3+)
-   |-- repository/  Spring Data JPA        (Phase 4+)
-   |-- model/       @Entity classes        (Phase 4+)
-   |-- dto/         API request/response shapes
-   |-- config/      CORS (+ HttpClient later)
-   |
-   |-- java.net.http.HttpClient --> target HTTP server   (Phase 3+)
-   |
-   v
-SQLite  ->  backend/data/app.db
+
+### Request flow
+
+For an ordinary request:
+
+```text
+Request Editor
+     │
+     ▼
+POST /api/requests/send
+     │
+     ▼
+Spring Boot
+     │
+     ├── Resolve environment variables
+     ├── Validate request
+     ├── Record history
+     │
+     ▼
+Build curl arguments
+     │
+     ▼
+curl / curl.exe
+     │
+     ▼
+Target server
+     │
+     ▼
+Response
+     │
+     ├── Status
+     ├── Headers
+     ├── Body
+     └── Duration
+     │
+     ▼
+Spring Boot
+     │
+     ▼
+React Response Viewer
 ```
 
-## Desktop app (Electron — Phase 12)
+The frontend **does not send requests directly to the target server**. The Spring Boot backend performs the outbound request.
 
-The React frontend + Spring Boot backend can be run and shipped as a self-contained
-Windows desktop app. Electron is only a **wrapper / orchestrator** — the backend is
-still Spring Boot, HTTP is still Java's `HttpClient`, storage is still SQLite.
+---
 
-```
-Electron (main process)
-   ├── picks a free loopback port (prefers 8080)
-   ├── starts the bundled Spring Boot jar on it, with a bundled Java runtime
-   ├── waits for  GET /api/health
-   ├── opens the window and loads the built React app
-   └── on exit, terminates the backend process it started
+## Technology Stack
 
-SQLite / logs live in a per-user, writable app-data directory (never inside the
-installed app):
-   Windows  %APPDATA%\Graphical cURL\graphical-curl.db   +  \logs\
-   macOS    ~/Library/Application Support/Graphical cURL/graphical-curl.db
-            ~/Library/Logs/Graphical cURL/
-```
+| Component         | Technology                  |
+| ----------------- | --------------------------- |
+| Frontend          | React 19 + Vite             |
+| Backend           | Java + Spring Boot 3.5      |
+| Build system      | Gradle 9.7.1                |
+| Database          | SQLite                      |
+| Persistence       | Spring Data JPA / Hibernate |
+| HTTP execution    | `curl` / `curl.exe`         |
+| Desktop shell     | Electron                    |
+| Desktop packaging | electron-builder            |
+| Windows package   | NSIS `.exe`                 |
+| macOS package     | `.dmg`                      |
+| Bundled runtime   | Custom `jlink` Java runtime |
 
-### Commands
+The application currently targets **Java 21 bytecode**. Development and packaging use JDK 25.
 
-| Task | Command | Notes |
-|------|---------|-------|
-| Browser dev — frontend | `cd frontend && npm run dev` (or `npm run dev` at repo root) | unchanged; http://localhost:5173 |
-| Browser dev — backend | `cd backend && gradlew.bat bootRun` | unchanged; http://localhost:8080 |
-| Desktop dev | `npm run electron:dev` | starts backend + Vite + Electron together |
-| Build the Windows installer | `npm run electron:build:win` | `vite build` → `bootJar` → `jlink` → electron-builder (NSIS) |
-| Build the macOS DMGs | `npm run electron:build:mac` | run on a Mac; see note below |
-| Backend tests | `npm run test:backend` | = `cd backend && gradlew.bat test` |
+---
 
-Prerequisites for *building*: Node 22 and a full **JDK 25** (with `jlink`, on
-`JAVA_HOME`). The project still compiles to **Java 21 bytecode**
-(`backend/build.gradle`) — only the build/runtime JDK is 25. The *end user* needs
-neither Java nor Node — both are bundled.
-
-The bundled Java runtime (`backend/build/jre`, produced by `jlink`) is
-**platform-specific**. `npm run electron:build:mac` on your Mac produces a
-correct DMG only for *that* Mac's architecture; the other arch's DMG would carry
-the wrong `java`. Use CI (below) for a proper dual-arch release, or pass a single
-matching arch locally (`npx electron-builder --mac --arm64`).
-
-### Releases (GitHub Actions)
-
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
-Windows installer (`windows-latest`) and the macOS x64 + arm64 DMGs
-(`macos-13` + `macos-14`, each with a natively-built `jlink` runtime), then
-creates/updates the GitHub Release for that tag and attaches:
-
-```
-Graphical-cURL-Setup-<version>.exe
-Graphical-cURL-<version>-x64.dmg
-Graphical-cURL-<version>-arm64.dmg
-```
-
-The tag must match `version` in the root `package.json` (the workflow fails fast
-if not). To cut `1.0.1`: bump `package.json` to `1.0.1`, commit, then
-`git tag v1.0.1 && git push origin v1.0.1`.
-
-`.github/workflows/build-desktop.yml` still runs a Windows-only installer build
-on pushes to `main` (uploaded as a workflow artifact, no Release).
-
-**macOS builds are unsigned / not notarized.** A downloaded DMG triggers
-Gatekeeper; the user right-clicks the app → **Open** once, or runs
-`xattr -dr com.apple.quarantine "/Applications/Graphical cURL.app"`. Adding an
-Apple Developer ID later removes this (see the release notes).
-
-## Build status of this phase
-
-**Phase 1 — project skeleton.** One backend endpoint (`GET /api/health`) and a
-frontend that calls it on load and shows a connected / not-connected banner.
-No request-sending yet.
+# Running the project
 
 ## Prerequisites
 
-| Tool | Version | Check |
-|------|---------|-------|
-| JDK | 21+ (tested on 25) | `java -version` |
-| Node.js | 20.19+ or 22.12+ (22 LTS recommended) | `node -v` |
+For development and building, install:
 
-You do **not** need Gradle installed — the project ships a Gradle wrapper
-(`./gradlew`) pinned to 9.7.1.
+* Node.js 22 LTS
+* JDK 25
+* Git
 
-> This machine currently has **no Node.js**. Install Node 22 LTS from
-> <https://nodejs.org/> (or `winget install OpenJS.NodeJS.LTS`) before running
-> the frontend. Open a new terminal afterwards so `PATH` updates.
+You do **not** need Gradle installed because the project includes the Gradle wrapper.
 
-## Project layout
-
-```
-curl-gui/
-├── backend/                  Spring Boot app
-│   ├── build.gradle
-│   ├── settings.gradle
-│   ├── gradlew / gradlew.bat  Gradle wrapper (no local Gradle needed)
-│   ├── data/                  SQLite file app.db is created here at runtime
-│   └── src/main/java/com/example/curlgui/
-│       ├── CurlGuiApplication.java   entry point
-│       ├── config/     WebCorsConfig.java
-│       ├── controller/ HealthController.java   ->  GET /api/health
-│       ├── dto/        HealthResponse.java
-│       ├── service/    (empty — Phase 3)
-│       ├── repository/ (empty — Phase 4)
-│       └── model/      (empty — Phase 4)
-└── frontend/                 React + Vite app
-    ├── package.json
-    ├── vite.config.js
-    ├── .env.development       VITE_API_BASE_URL=http://localhost:8080
-    └── src/
-        ├── main.jsx
-        ├── App.jsx
-        ├── api/client.js      fetch wrapper
-        └── components/BackendStatus.jsx
-```
-
-## Run the backend
-
-From `backend/`:
+Check your versions:
 
 ```bash
+node -v
+java -version
+git --version
+```
+
+### cURL
+
+The application uses the system `curl` executable.
+
+Windows 10/11 normally includes `curl.exe`.
+
+Check it with:
+
+```powershell
+curl.exe --version
+```
+
+On macOS/Linux:
+
+```bash
+curl --version
+```
+
+The executable can optionally be overridden using:
+
+```properties
+app.curl.path=/path/to/curl
+```
+
+---
+
+# Development
+
+There are two ways to run Graphical cURL during development.
+
+## Option 1 — Run frontend and backend separately
+
+### Start the backend
+
+Windows:
+
+```powershell
+cd backend
+.\gradlew.bat bootRun
+```
+
+macOS/Linux:
+
+```bash
+cd backend
 ./gradlew bootRun
 ```
 
-On Windows `cmd` / PowerShell use `gradlew.bat bootRun`.
+The backend normally runs on:
 
-- First run downloads Gradle 9.7.1 and the dependencies (a few minutes).
-- Started successfully when you see a line like
-  `Tomcat started on port 8080` / `Started CurlGuiApplication in X seconds`.
-- Leave it running. Stop with `Ctrl+C`.
-- A SQLite file appears at `backend/data/app.db`.
-
-Quick check (new terminal):
-
-```bash
-curl http://localhost:8080/api/health
+```text
+http://localhost:8080
 ```
 
-Expected:
-
-```json
-{"status":"UP","service":"curl-gui-backend","timestamp":"2026-09-02T12:34:56.789Z"}
-```
-
-## Run the frontend
-
-From `frontend/` (first time only):
+### Start the frontend
 
 ```bash
+cd frontend
 npm install
-```
-
-Then:
-
-```bash
 npm run dev
 ```
 
-Open <http://localhost:5173>.
+The Vite development server normally runs on:
 
-## Verify the two are communicating
-
-1. Backend running (`./gradlew bootRun`) — `curl http://localhost:8080/api/health`
-   returns the JSON above.
-2. Frontend running (`npm run dev`) — open <http://localhost:5173>.
-3. The page shows a **green** banner:
-   `● Backend connected — curl-gui-backend reported UP at <timestamp>`.
-   That value came from the backend over REST, so the round trip works
-   (including CORS).
-4. Stop the backend, refresh the page → banner turns **red**:
-   `● Backend not reachable — Could not reach the backend...`. Restart the
-   backend and refresh → green again.
-
-## Notes / engineering choices
-
-- **Port 8080 (backend) / 5173 (frontend).** `WebCorsConfig` allows exactly the
-  Vite origin; `vite.config.js` sets `strictPort` so Vite won't silently move to
-  another (blocked) port.
-- **`spring.jpa.hibernate.ddl-auto=update`** — Hibernate builds the schema from
-  `@Entity` classes automatically. Fine for a local learning app; a production
-  app would use versioned migrations. No entities exist yet in Phase 1.
-- **`-Dnet.bytebuddy.experimental=true`** is passed to `bootRun`/`test` in
-  `build.gradle`. Byte Buddy (used by Hibernate) can lag a brand-new JDK's
-  class-file version; this flag lets it proceed. Harmless on older JDKs.
-- **Java 21 bytecode** (`sourceCompatibility = '21'`) even though the machine
-  runs JDK 25 — broadest library compatibility.
+```text
+http://localhost:5173
 ```
+
+Then open the frontend in your browser.
+
+---
+
+## Option 2 — Run the desktop application
+
+The Electron development command starts the backend, Vite, and Electron together:
+
+```bash
+npm install
+npm run electron:dev
+```
+
+The development flow is:
+
+```text
+npm run electron:dev
+       │
+       ├── Spring Boot
+       ├── Vite
+       └── Electron
+```
+
+---
+
+# Building the application
+
+## Windows
+
+Build the Windows installer:
+
+```bash
+npm run electron:build:win
+```
+
+The process performs approximately:
+
+```text
+React build
+     ↓
+Spring Boot bootJar
+     ↓
+Create bundled Java runtime with jlink
+     ↓
+Electron packaging
+     ↓
+NSIS installer
+```
+
+The installer is produced in:
+
+```text
+release/
+```
+
+The resulting installer has a name similar to:
+
+```text
+Graphical-cURL-Setup-1.0.0.exe
+```
+
+End users do **not** need to install Java, Node.js, Gradle, or the source code.
+
+---
+
+## macOS
+
+Build a macOS package on a Mac:
+
+```bash
+npm run electron:build:mac
+```
+
+The bundled Java runtime is platform-specific, so macOS builds should be performed on macOS.
+
+For official releases, GitHub Actions builds the macOS packages on native macOS runners.
+
+The release artifacts are:
+
+```text
+Graphical-cURL-1.0.0-x64.dmg
+Graphical-cURL-1.0.0-arm64.dmg
+```
+
+---
+
+# GitHub Releases
+
+Releases are automatically built using GitHub Actions.
+
+Pushing a version tag matching:
+
+```text
+v*
+```
+
+starts the release workflow.
+
+For example:
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+The workflow builds:
+
+```text
+Windows x64
+    ↓
+Graphical-cURL-Setup-1.0.1.exe
+
+macOS x64
+    ↓
+Graphical-cURL-1.0.1-x64.dmg
+
+macOS arm64
+    ↓
+Graphical-cURL-1.0.1-arm64.dmg
+```
+
+The workflow then creates a GitHub Release and attaches the installers.
+
+## Versioning
+
+The Git tag must match the version in the root `package.json`.
+
+For example:
+
+```json
+{
+  "version": "1.0.1"
+}
+```
+
+must be released with:
+
+```text
+v1.0.1
+```
+
+A typical release is:
+
+```bash
+# 1. Change package.json version
+
+git add .
+git commit -m "Release v1.0.1"
+git push origin main
+
+# 2. Create and push the release tag
+
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+GitHub Actions then handles the platform-specific builds.
+
+---
+
+# macOS security
+
+The current macOS packages are **unsigned and not notarized**.
+
+As a result, macOS Gatekeeper may display a warning when opening the application downloaded from GitHub.
+
+This is expected for the current development/release setup.
+
+Proper Apple code signing and notarization can be added later using an Apple Developer account and GitHub Actions secrets.
+
+---
+
+# Data storage
+
+Graphical cURL uses SQLite for local persistence.
+
+The database contains application data such as:
+
+* Request history
+* Saved requests
+* Collections
+* Environments
+* Environment variables
+
+The desktop application stores writable data outside the installation directory.
+
+### Windows
+
+```text
+%APPDATA%\Graphical cURL\
+```
+
+### macOS
+
+```text
+~/Library/Application Support/Graphical cURL/
+```
+
+Logs are also stored in the operating system's appropriate application-data/log directory.
+
+---
+
+# Security considerations
+
+Graphical cURL is designed to execute arbitrary HTTP requests on behalf of the local user.
+
+Some important implementation decisions are intentional:
+
+### No shell execution
+
+Requests are passed to cURL using Java's `ProcessBuilder` argument-list API.
+
+The application does **not** construct a command such as:
+
+```text
+cmd.exe /c "curl ..."
+```
+
+or:
+
+```text
+powershell -Command "curl ..."
+```
+
+This prevents request values from being interpreted as shell commands.
+
+### Sensitive information
+
+The application avoids persisting or logging sensitive request values such as:
+
+* `Authorization`
+* Cookies
+* Authentication credentials
+* Sensitive environment variables
+* Request bodies
+
+Request logs contain metadata rather than complete request contents.
+
+### TLS
+
+TLS certificate verification is enabled by default.
+
+Imported cURL commands containing:
+
+```text
+-k
+```
+
+or:
+
+```text
+--insecure
+```
+
+are preserved and generate a warning.
+
+### Redirects
+
+Redirects are not followed by default.
+
+Imported commands containing:
+
+```text
+-L
+```
+
+or:
+
+```text
+--location
+```
+
+preserve that behavior.
+
+---
+
+# cURL compatibility
+
+Graphical cURL supports the cURL features needed by its request editor and common browser-generated commands.
+
+Currently supported during import include:
+
+* URL
+* HTTP method
+* Headers
+* Cookies
+* Request bodies
+* User-Agent
+* Basic authentication
+* `--compressed`
+* HTTP version flags
+* Redirects
+* `--insecure`
+* Connection timeout
+* Maximum request time
+* HTTP proxy
+* Proxy authentication
+
+Some advanced cURL features are **not yet supported by the GUI parser**, including:
+
+* `-F` / `--form`
+* `--form-string`
+* `-T` / `--upload-file`
+* `--data-urlencode`
+* `-G` / `--get`
+* Client certificates
+* Custom CA certificates
+* Pinned public keys
+
+These commands currently produce a clear unsupported-feature error rather than silently executing an incomplete request.
+
+---
+
+# Run Multiple
+
+The **Run Multiple** feature allows a request to be executed repeatedly.
+
+Configuration includes:
+
+* Number of runs
+* Delay between runs
+* Sequential execution
+* Parallel execution
+
+There is a hard limit of **5,000 runs** per operation.
+
+Parallel execution is bounded rather than creating thousands of simultaneous operating-system processes.
+
+Run Multiple also avoids creating a separate full history entry for every iteration.
+
+---
+
+# Project structure
+
+```text
+curl-gui/
+│
+├── backend/
+│   ├── build.gradle
+│   ├── settings.gradle
+│   ├── gradlew
+│   ├── gradlew.bat
+│   │
+│   └── src/
+│       ├── main/
+│       │   ├── java/com/example/curlgui/
+│       │   │   ├── CurlGuiApplication.java
+│       │   │   ├── config/
+│       │   │   ├── controller/
+│       │   │   ├── dto/
+│       │   │   ├── model/
+│       │   │   ├── repository/
+│       │   │   └── service/
+│       │   │
+│       │   └── resources/
+│       │
+│       └── test/
+│
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.js
+│   └── src/
+│       ├── api/
+│       ├── components/
+│       ├── hooks/
+│       ├── lib/
+│       └── ...
+│
+├── electron/
+│   ├── main.js
+│   ├── preload.js
+│   ├── lib/
+│   └── scripts/
+│
+├── manual-tests/
+│
+├── .github/
+│   └── workflows/
+│       └── release.yml
+│
+├── electron-builder.yml
+├── package.json
+└── README.md
+```
+
+---
+
+# Backend API
+
+The frontend communicates with the Spring Boot backend through REST endpoints.
+
+Some of the main endpoints include:
+
+```text
+GET    /api/health
+
+POST   /api/requests/send
+POST   /api/requests/export-curl
+
+GET    /api/history
+DELETE /api/history/{id}
+DELETE /api/history
+
+GET    /api/collections
+POST   /api/collections
+...
+
+GET    /api/environments
+POST   /api/environments
+...
+```
+
+The exact API is primarily intended for the application's frontend rather than as a public web API.
+
+---
+
+# Testing
+
+Run the backend test suite:
+
+Windows:
+
+```powershell
+cd backend
+.\gradlew.bat test
+```
+
+macOS/Linux:
+
+```bash
+cd backend
+./gradlew test
+```
+
+Or from the project root:
+
+```bash
+npm run test:backend
+```
+
+The project includes unit tests for areas including:
+
+* cURL tokenisation
+* cURL parsing
+* cURL generation
+* cURL command construction
+* Cookies
+* Environment variables
+* Request execution
+* Run Multiple validation
+* Request loop behavior
+
+---
+
+# Design principles
+
+Graphical cURL is intentionally a local application rather than a cloud service.
+
+The project prioritises:
+
+1. **Simple architecture**
+2. **Local execution**
+3. **No account required**
+4. **No external request relay**
+5. **Clear separation between frontend and backend**
+6. **Safe process execution**
+7. **Readable cURL import/export**
+8. **Small, focused feature set**
+
+The application is also a learning project for exploring:
+
+* React
+* Spring Boot
+* REST APIs
+* HTTP
+* cURL
+* SQLite
+* JPA
+* Electron
+* Desktop application packaging
+* GitHub Actions
+* Cross-platform builds
+
+---
+
+# Known limitations
+
+Graphical cURL is still under active development.
+
+Current limitations include:
+
+* Advanced multipart/file-upload cURL commands are not yet supported
+* Client certificate options are not yet supported
+* Saved Requests currently do not persist all imported transport-level cURL options
+* Response bodies are represented as strings by the current API, so true binary-response handling is limited
+* macOS releases are currently unsigned and unnotarized
+* Run Multiple starts a separate cURL process for each iteration, so it has more overhead than an in-process HTTP client
+
+---
+
+# License
+
+This project is released under the MIT License.
