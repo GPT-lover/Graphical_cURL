@@ -18,6 +18,9 @@ import EnvironmentBar from './EnvironmentBar.jsx'
  *   onExport         - (request) generate + copy as a cURL command
  *   exportCopied     - true briefly after a successful "Copy as cURL"
  *   onRunMultiple    - () open the "Run Multiple" dialog
+ *   onAddToChain     - () add the current request to the request chain
+ *   onOpenChain      - () open the "Request Chain" dialog
+ *   chainStepCount   - number of requests currently in the chain (badge)
  *   savedRequestName - name of the loaded saved request, or null if unsaved
  *   onNewRequest     - () clear the editor + the saved-request selection
  *   onSave           - () open the Save dialog (create a new saved request)
@@ -35,6 +38,9 @@ export default function RequestEditor({
   onExport,
   exportCopied,
   onRunMultiple,
+  onAddToChain,
+  onOpenChain,
+  chainStepCount,
   savedRequestName,
   onNewRequest,
   onSave,
@@ -120,6 +126,12 @@ export default function RequestEditor({
         </button>
         <button type="button" className="btn" onClick={onRunMultiple}>
           Run Multiple
+        </button>
+        <button type="button" className="btn" onClick={onAddToChain}>
+          Add to Chain
+        </button>
+        <button type="button" className="btn" onClick={onOpenChain}>
+          Request Chain{chainStepCount > 0 ? ` (${chainStepCount})` : ''}
         </button>
         <button type="button" className="btn" onClick={() => onExport(request)}>
           Copy as cURL

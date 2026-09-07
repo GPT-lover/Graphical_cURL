@@ -13,8 +13,11 @@ import { useHistory } from './hooks/useHistory.js'
 import { useCollections } from './hooks/useCollections.js'
 import { useEnvironments } from './hooks/useEnvironments.js'
 import { useRunMultiple } from './hooks/useRunMultiple.js'
+import { useChain } from './hooks/useChain.js'
+import { useChainBuilder } from './hooks/useChainBuilder.js'
 import EnvironmentModal from './components/EnvironmentModal.jsx'
 import RunMultipleModal from './components/RunMultipleModal.jsx'
+import ChainModal from './components/ChainModal.jsx'
 import { toRequestPayload } from './lib/request.js'
 import {
   createCollection,
@@ -46,10 +49,13 @@ export default function App() {
   const { result, error, isSending, send } = useSendRequest(history.refresh)
   const exportCurl = useCurlExport()
   const runMultiple = useRunMultiple()
+  const chainBuilder = useChainBuilder()
+  const chainRun = useChain()
 
   const [importOpen, setImportOpen] = useState(false)
   const [envModalOpen, setEnvModalOpen] = useState(false)
   const [runMultipleOpen, setRunMultipleOpen] = useState(false)
+  const [chainModalOpen, setChainModalOpen] = useState(false)
   const [saved, setSaved] = useState(null)
   const [saveModal, setSaveModal] = useState({ open: false, mode: 'save' })
 
@@ -85,6 +91,41 @@ export default function App() {
     setRunMultipleOpen(false)
     runMultiple.reset()
     history.refresh()
+  }
+
+  // --- request chain --------------------------------------------------
+
+  // Snapshot the current editor request (method/url/headers/body - no cookies,
+  // matching how "Save Request" already treats the editor) as a new chain step.
+  function handleAddToChain() {
+    chainBuilder.addStep(editorRequestFields())
+  }
+
+  // Start the chain: each step already carries its own method/url/headers/body:
+  // just attach the active environment so {{variables}} resolve the same way
+  // Send and Run Multiple do.
+  function handleRunChain({ requests, loops }) {
+    chainRun.start({
+      requests: requests.map((step) => ({
+        method: step.method,
+        url: step.url.trim(),
+        headers: step.headers ?? [],
+        body: step.body ?? '',
+        environmentId: environments.activeEnvironmentId ?? null,
+      })),
+      loops,
+    })
+  }
+
+  function openChain() {
+    chainRun.reset()
+    setChainModalOpen(true)
+  }
+
+  function closeChain() {
+    if (chainRun.phase === 'running') chainRun.stop()
+    setChainModalOpen(false)
+    chainRun.reset()
   }
 
   // --- helpers ------------------------------------------------------
@@ -265,6 +306,9 @@ export default function App() {
             onExport={exportCurl.run}
             exportCopied={exportCurl.copied}
             onRunMultiple={openRunMultiple}
+            onAddToChain={handleAddToChain}
+            onOpenChain={openChain}
+            chainStepCount={chainBuilder.steps.length}
             savedRequestName={saved?.name ?? null}
             onNewRequest={handleNewRequest}
             onSave={() => setSaveModal({ open: true, mode: 'save' })}
@@ -320,6 +364,14 @@ export default function App() {
         onClose={closeRunMultiple}
         run={runMultiple}
         onRun={handleRunMultiple}
+      />
+
+      <ChainModal
+        open={chainModalOpen}
+        onClose={closeChain}
+        chain={chainBuilder}
+        run={chainRun}
+        onRun={handleRunChain}
       />
     </div>
   )

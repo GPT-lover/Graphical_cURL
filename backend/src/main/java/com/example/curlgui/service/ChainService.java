@@ -1,0 +1,215 @@
+package com.example.curlgui.service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import com.example.curlgui.dto.ChainResultDto;
+import com.example.curlgui.dto.ChainStartedDto;
+import com.example.curlgui.dto.ChainStatusDto;
+import com.example.curlgui.dto.RunChainRequestDto;
+import com.example.curlgui.dto.SendRequestDto;
+import com.example.curlgui.dto.SendResponseDto;
+
+import jakarta.annotation.PreDestroy;
+
+/**
+ * Runs a "request chain": an ordered list of (possibly different) requests,
+ * repeated for a number of loops, where each request is <b>dispatched</b> in
+ * order but the chain never waits for a request's HTTP response before
+ * dispatching the next one - see {@link ChainRunner} for how that's done.
+ *
+ * <p>Flow mirrors {@code RunMultipleService}: validate -&gt; resolve each
+ * request's {@code {{variables}}} <b>once</b> (fail fast, no chain started on an
+ * unknown variable or bad URL) -&gt; snapshot -&gt; kick the chain onto a
+ * background thread and return a {@code chainId}. The runner delegates the
+ * actual HTTP work to {@link RequestService#executeResolved} - the same code the
+ * normal Send and run-multiple loop use.
+ *
+ * <p>History is intentionally not recorded for chain runs: unlike run-multiple
+ * (which repeats one request, and records a single summarising row for the
+ * whole loop), a chain is a heterogeneous list of requests, so there is no
+ * single "the request" a chain's row could represent without either recording
+ * one row per dispatch (defeating the "never one per iteration" rule
+ * run-multiple already follows) or misrepresenting the run. This can be revisited
+ * if per-chain history turns out to be wanted.
+ */
+@Service
+public class ChainService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChainService.class);
+
+    /** Backend safety limits - enforced regardless of the frontend. */
+    static final int MAX_CHAIN_LENGTH = 20;
+    static final int MAX_LOOPS = 5000;
+    /** Extra guard on top of the two limits above: chainLength * loops. */
+    static final int MAX_TOTAL_DISPATCHES = 20_000;
+    private static final long RETENTION_MS = 10 * 60 * 1000L;
+
+    private final RequestService requestService;
+    private final EnvironmentVariableService environmentVariableService;
+    private final EnvironmentVariableResolver variableResolver;
+    private final ChainRunner chainRunner;
+
+    private final ExecutorService orchestrators = new ThreadPoolExecutor(
+            2, 4, 30, TimeUnit.SECONDS, new LinkedBlockingQueue<>(), daemon("chain-orchestrator"));
+    private final Map<String, ChainState> chains = new ConcurrentHashMap<>();
+
+    public ChainService(RequestService requestService,
+                        EnvironmentVariableService environmentVariableService,
+                        EnvironmentVariableResolver variableResolver,
+                        ChainRunner chainRunner) {
+        this.requestService = requestService;
+        this.environmentVariableService = environmentVariableService;
+        this.variableResolver = variableResolver;
+        this.chainRunner = chainRunner;
+    }
+
+    @PreDestroy
+    void shutdown() {
+        orchestrators.shutdownNow();
+    }
+
+    // ------------------------------------------------------------------
+
+    public ChainStartedDto start(RunChainRequestDto dto) {
+        sweepOldChains();
+
+        if (dto == null || dto.requests() == null || dto.requests().isEmpty()) {
+            throw new InvalidRequestException("At least one request is required in the chain.");
+        }
+        int chainLength = requireChainLength(dto.requests().size());
+        int loops = requireLoops(dto.loops());
+        if (chainLength * loops > MAX_TOTAL_DISPATCHES) {
+            throw new InvalidRequestException(
+                    "This chain would dispatch " + (chainLength * loops) + " requests; the maximum is "
+                            + MAX_TOTAL_DISPATCHES + ". Reduce the chain length or the loop count.");
+        }
+
+        // Resolve every step's environment variables ONCE, up front. If a
+        // placeholder is unknown or a URL is invalid this throws (HTTP 400) and
+        // no chain is created / no request is sent.
+        List<SendRequestDto> resolved = new ArrayList<>(chainLength);
+        for (SendRequestDto step : dto.requests()) {
+            if (step == null) {
+                throw new InvalidRequestException("Every request in the chain must be present.");
+            }
+            Map<String, String> variables = environmentVariableService.variablesFor(step.environmentId());
+            SendRequestDto resolvedStep = variableResolver.resolveRequest(step, variables);
+            requestService.parseAndValidateUrl(resolvedStep.url()); // fail fast on a bad URL
+            resolved.add(resolvedStep);
+        }
+
+        String id = UUID.randomUUID().toString();
+        ChainState state = new ChainState(id, chainLength, loops);
+        chains.put(id, state);
+
+        orchestrators.submit(() -> runChain(state, resolved));
+        log.info("Chain started: {} request(s) x {} loop(s)", chainLength, loops);
+        return new ChainStartedDto(id);
+    }
+
+    public ChainStatusDto status(String chainId, int offset) {
+        ChainState state = require(chainId);
+        state.lastTouchedAtMillis = System.currentTimeMillis();
+        return new ChainStatusDto(
+                state.status.name(),
+                state.totalIterations,
+                state.chainLength,
+                state.totalDispatches,
+                state.dispatched.get(),
+                state.completed.get(),
+                state.successful.get(),
+                state.redirects.get(),
+                state.failed.get(),
+                state.resultsFrom(offset),
+                state.status == ChainState.Status.RUNNING ? null : state.summary());
+    }
+
+    public void stop(String chainId) {
+        require(chainId).cancelled.set(true);
+    }
+
+    // ------------------------------------------------------------------
+
+    private void runChain(ChainState state, List<SendRequestDto> resolved) {
+        Function<SendRequestDto, RunOutcome> oneRun = req -> {
+            try {
+                SendResponseDto response = requestService.executeResolved(req);
+                return new RunOutcome(response.statusCode(), response.durationMs(), null);
+            } catch (RequestExecutionException ex) {
+                return new RunOutcome(null, null, "Network Error");
+            } catch (RuntimeException ex) {
+                return new RunOutcome(null, null, "Error");
+            }
+        };
+        try {
+            chainRunner.execute(state, resolved, oneRun);
+        } catch (RuntimeException ex) {
+            log.warn("Chain run ended abnormally: {}", ex.getClass().getSimpleName());
+        } finally {
+            state.finishedAtNanos = System.nanoTime();
+            state.status = state.cancelled.get() ? ChainState.Status.STOPPED : ChainState.Status.DONE;
+            state.lastTouchedAtMillis = System.currentTimeMillis();
+        }
+    }
+
+    private ChainState require(String chainId) {
+        ChainState state = chains.get(chainId);
+        if (state == null) {
+            throw new NotFoundException("Chain \"" + chainId + "\" not found.");
+        }
+        return state;
+    }
+
+    private void sweepOldChains() {
+        long now = System.currentTimeMillis();
+        chains.values().removeIf(s ->
+                s.status != ChainState.Status.RUNNING && now - s.lastTouchedAtMillis > RETENTION_MS);
+    }
+
+    // ---- validation (unit-tested directly) ------------------------
+
+    static int requireChainLength(Integer length) {
+        if (length == null || length < 1) {
+            throw new InvalidRequestException("A chain must have at least one request.");
+        }
+        if (length > MAX_CHAIN_LENGTH) {
+            throw new InvalidRequestException("A chain must not exceed " + MAX_CHAIN_LENGTH + " requests.");
+        }
+        return length;
+    }
+
+    static int requireLoops(Integer loops) {
+        if (loops == null) {
+            throw new InvalidRequestException("Loop count is required.");
+        }
+        if (loops < 1) {
+            throw new InvalidRequestException("Loop count must be at least 1.");
+        }
+        if (loops > MAX_LOOPS) {
+            throw new InvalidRequestException("Loop count must not exceed " + MAX_LOOPS + ".");
+        }
+        return loops;
+    }
+
+    private static ThreadFactory daemon(String name) {
+        return runnable -> {
+            Thread t = new Thread(runnable, name);
+            t.setDaemon(true);
+            return t;
+        };
+    }
+}

@@ -304,3 +304,31 @@ export function getRunMultipleStatus(runId, offset = 0) {
 export function stopRunMultiple(runId) {
   return postJson(`/api/requests/run-multiple/${runId}/stop`, {})
 }
+
+// ---- Request chain -------------------------------------------------
+
+/**
+ * POST /api/requests/run-chain - start a chain run. Returns { chainId }.
+ * `payload` = { requests: [...SendRequestDto], loops }. Requests are dispatched
+ * strictly in order but the chain never waits for one's HTTP response before
+ * dispatching the next - see ChainRunner on the backend.
+ * 400 if the chain/loop count is invalid or an environment variable can't resolve.
+ */
+export function startChain(payload) {
+  return postJson('/api/requests/run-chain', payload)
+}
+
+/**
+ * GET /api/requests/run-chain/{chainId}?offset=N - current progress.
+ * `offset` = how many change-events the caller already has (a slot can appear
+ * more than once as it moves from "dispatched" to "completed" - see
+ * useChain.js for how these are merged back into one row per slot).
+ */
+export function getChainStatus(chainId, offset = 0) {
+  return getJson(`/api/requests/run-chain/${chainId}?offset=${offset}`)
+}
+
+/** POST /api/requests/run-chain/{chainId}/stop - stop dispatching new requests. */
+export function stopChain(chainId) {
+  return postJson(`/api/requests/run-chain/${chainId}/stop`, {})
+}

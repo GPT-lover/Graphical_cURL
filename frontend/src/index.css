@@ -850,6 +850,13 @@ code {
   border-color: rgba(224, 108, 108, 0.4);
 }
 
+/* A chain request that has been dispatched but has no result yet. */
+.status-code--pending {
+  color: var(--text-muted);
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+
 .response-time,
 .response-size {
   font-family: var(--font-mono);
@@ -1292,4 +1299,56 @@ code {
 .run-table__empty {
   color: var(--text-faint);
   font-style: italic;
+}
+
+/* ---- Request Chain dialog --------------------------------- */
+
+.chain-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.chain-steps__empty {
+  margin: 0;
+  padding: 0.9rem;
+  text-align: center;
+  color: var(--text-faint);
+  font-style: italic;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.chain-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.chain-step__index {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-faint);
+}
+
+.chain-step__method {
+  flex: 0 0 auto;
+}
+
+.chain-step__url {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.chain-step__meta {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  min-width: 2.2rem;
+  text-align: right;
 }
