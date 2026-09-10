@@ -37,6 +37,13 @@ Graphical cURL is designed as a simple alternative to tools such as Postman and 
   * Use variables such as `{{API_URL}}` or `{{AUTH_TOKEN}}`
   * Variables can be used in URLs, headers, cookies, and request bodies
   * Sensitive variables can be masked
+* **Dynamic random values**
+
+  * Use `{{random(50)}}` for a new random 50-character alphanumeric string
+  * Works in URLs, headers, cookies, and request bodies
+  * Resolved immediately before each request is sent, so every loop iteration and every
+    chained request gets a freshly generated value
+  * Each occurrence gets its own value; lengths from 1 to 4096 are allowed
 * **Response viewer**
 
   * Response body, headers, and raw response views

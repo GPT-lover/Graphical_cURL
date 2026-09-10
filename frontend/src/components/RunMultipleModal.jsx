@@ -165,6 +165,12 @@ export default function RunMultipleModal({ open, onClose, run, onRun }) {
               </label>
             </fieldset>
 
+            <p className="modal__hint">
+              Tip: <code>{'{{random(50)}}'}</code> anywhere in the request (URL, headers,
+              cookies or body) is replaced with a new random 50-character alphanumeric
+              string for <em>every</em> iteration. Each occurrence gets its own value.
+            </p>
+
             {formError && <div className="modal__error" role="alert">{formError}</div>}
 
             <div className="modal__actions">

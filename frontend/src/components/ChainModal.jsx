@@ -129,6 +129,11 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
               request&rsquo;s response. The whole chain repeats for the given number of loops,
               pausing for the cooldown between one iteration and the next.
             </p>
+            <p className="modal__hint">
+              Tip: <code>{'{{random(50)}}'}</code> anywhere in a request (URL, headers,
+              cookies or body) is replaced with a new random 50-character alphanumeric
+              string for every dispatch, so each request in each loop gets its own value.
+            </p>
 
             <div className="chain-steps">
               {chain.steps.length === 0 && (

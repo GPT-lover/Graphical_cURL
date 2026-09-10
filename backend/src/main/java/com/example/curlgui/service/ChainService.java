@@ -63,6 +63,7 @@ public class ChainService {
     private final RequestService requestService;
     private final EnvironmentVariableService environmentVariableService;
     private final EnvironmentVariableResolver variableResolver;
+    private final DynamicVariableResolver dynamicResolver;
     private final ChainRunner chainRunner;
 
     private final ExecutorService orchestrators = new ThreadPoolExecutor(
@@ -72,10 +73,12 @@ public class ChainService {
     public ChainService(RequestService requestService,
                         EnvironmentVariableService environmentVariableService,
                         EnvironmentVariableResolver variableResolver,
+                        DynamicVariableResolver dynamicResolver,
                         ChainRunner chainRunner) {
         this.requestService = requestService;
         this.environmentVariableService = environmentVariableService;
         this.variableResolver = variableResolver;
+        this.dynamicResolver = dynamicResolver;
         this.chainRunner = chainRunner;
     }
 
@@ -111,7 +114,11 @@ public class ChainService {
             }
             Map<String, String> variables = environmentVariableService.variablesFor(step.environmentId());
             SendRequestDto resolvedStep = variableResolver.resolveRequest(step, variables);
-            requestService.parseAndValidateUrl(resolvedStep.url()); // fail fast on a bad URL
+            // Probe this step's dynamic templates once, up front (see
+            // RunMultipleService#start); the probe's values are discarded, every
+            // dispatch generates its own.
+            SendRequestDto probe = dynamicResolver.resolveRequest(resolvedStep);
+            requestService.parseAndValidateUrl(probe.url()); // fail fast on a bad URL
             resolved.add(resolvedStep);
         }
 

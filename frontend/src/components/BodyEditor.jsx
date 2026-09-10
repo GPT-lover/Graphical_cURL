@@ -25,7 +25,9 @@ export default function BodyEditor({ value, onChange }) {
       />
 
       <p className="panel__hint">
-        Sent as raw text. Not parsed or validated yet.
+        Sent as raw text. Not parsed or validated yet. Use{' '}
+        <code>{'{{random(50)}}'}</code> anywhere in the URL, headers, cookies or body
+        for a new 50-character alphanumeric value on every request sent.
       </p>
     </section>
   )

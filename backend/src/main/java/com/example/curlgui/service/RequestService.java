@@ -46,15 +46,18 @@ public class RequestService {
     private final RequestHistoryService historyService;
     private final EnvironmentVariableService environmentVariableService;
     private final EnvironmentVariableResolver variableResolver;
+    private final DynamicVariableResolver dynamicResolver;
 
     public RequestService(CurlProcessExecutor curlExecutor,
                           RequestHistoryService historyService,
                           EnvironmentVariableService environmentVariableService,
-                          EnvironmentVariableResolver variableResolver) {
+                          EnvironmentVariableResolver variableResolver,
+                          DynamicVariableResolver dynamicResolver) {
         this.curlExecutor = curlExecutor;
         this.historyService = historyService;
         this.environmentVariableService = environmentVariableService;
         this.variableResolver = variableResolver;
+        this.dynamicResolver = dynamicResolver;
     }
 
     /**
@@ -98,8 +101,10 @@ public class RequestService {
     }
 
     /**
-     * Send an <b>already-resolved</b> request: no {{variable}} substitution and no
-     * History. Shared by {@link #execute} (the normal Send) and the run-multiple
+     * Send an <b>already-resolved</b> request: no environment {{variable}}
+     * substitution and no History. Dynamic {@code {{random(N)}}} templates are
+     * still resolved, per send, because their whole point is a fresh value each
+     * time. Shared by {@link #execute} (the normal Send) and the run-multiple
      * loop, so both use the same curl-execution path, timeouts and response
      * handling. Runs quietly (no per-request "Proxying..." log line).
      */
@@ -107,7 +112,12 @@ public class RequestService {
         return executeResolved(resolved, false);
     }
 
-    private SendResponseDto executeResolved(SendRequestDto resolved, boolean logProxyLine) {
+    private SendResponseDto executeResolved(SendRequestDto request, boolean logProxyLine) {
+        // Dynamic {{random(N)}} templates are resolved HERE - once per actual
+        // send, on a copy - so every loop iteration, every parallel worker and
+        // every chain dispatch gets its own freshly generated value while the
+        // caller's request keeps its templates for the next iteration.
+        SendRequestDto resolved = dynamicResolver.resolveRequest(request);
         String method = normaliseMethod(resolved.method());
         URI uri = parseAndValidateUrl(resolved.url());
         String body = resolved.body() == null ? "" : resolved.body();

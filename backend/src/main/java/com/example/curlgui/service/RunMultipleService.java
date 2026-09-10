@@ -55,6 +55,7 @@ public class RunMultipleService {
     private final RequestService requestService;
     private final EnvironmentVariableService environmentVariableService;
     private final EnvironmentVariableResolver variableResolver;
+    private final DynamicVariableResolver dynamicResolver;
     private final RequestLoopRunner loopRunner;
     private final RequestHistoryService historyService;
 
@@ -65,11 +66,13 @@ public class RunMultipleService {
     public RunMultipleService(RequestService requestService,
                               EnvironmentVariableService environmentVariableService,
                               EnvironmentVariableResolver variableResolver,
+                              DynamicVariableResolver dynamicResolver,
                               RequestLoopRunner loopRunner,
                               RequestHistoryService historyService) {
         this.requestService = requestService;
         this.environmentVariableService = environmentVariableService;
         this.variableResolver = variableResolver;
+        this.dynamicResolver = dynamicResolver;
         this.loopRunner = loopRunner;
         this.historyService = historyService;
     }
@@ -96,7 +99,12 @@ public class RunMultipleService {
         Map<String, String> variables =
                 environmentVariableService.variablesFor(dto.request().environmentId());
         SendRequestDto resolved = variableResolver.resolveRequest(dto.request(), variables);
-        requestService.parseAndValidateUrl(resolved.url()); // fail fast on a bad URL
+        // Probe the dynamic templates once, up front: a malformed {{random(...)}}
+        // anywhere in the request fails here (HTTP 400) instead of failing on
+        // every iteration later. The probe's values are discarded - each
+        // iteration generates its own inside RequestService.
+        SendRequestDto probe = dynamicResolver.resolveRequest(resolved);
+        requestService.parseAndValidateUrl(probe.url()); // fail fast on a bad URL
 
         String id = UUID.randomUUID().toString();
         RunState state = new RunState(id, mode, runCount);
