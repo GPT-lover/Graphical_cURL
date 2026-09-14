@@ -12,7 +12,7 @@ import java.util.List;
  *   "url": "https://example.com/api/user",
  *   "headers":  [ { "key": "accept", "value": "application/json" } ],
  *   "cookies":  [ { "key": "session", "value": "xyz789" } ],
- *   "body": "{\"name\":\"William\"}",
+ *   "body": "{\"name\":\"Alex\"}",
  *   "warnings": [ "Ignored --location: redirects are not followed automatically." ]
  * }
  * </pre>

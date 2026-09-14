@@ -5,7 +5,7 @@ const PLACEHOLDER = `curl 'https://example.com/api/user' \\
   -H 'accept: application/json' \\
   -H 'authorization: Bearer abc123' \\
   -b 'session=xyz789; theme=dark' \\
-  --data-raw '{"name":"William"}'`
+  --data-raw '{"name":"Alex"}'`
 
 /**
  * Modal dialog for pasting a Chrome "Copy as cURL" command.

@@ -81,14 +81,14 @@ class DynamicVariableLoopTest {
 
     @Test
     void aLoopWithoutTemplatesBehavesExactlyAsBefore() {
-        SendRequestDto original = request("{\"name\":\"William\"}");
+        SendRequestDto original = request("{\"name\":\"Alex\"}");
         RunState state = new RunState("test", RunMode.SEQUENTIAL, 5);
 
         loopRunner.execute(state, original, 0, send);
 
         assertEquals(5, sentBodies.size());
         assertEquals(1, Set.copyOf(sentBodies).size());
-        assertTrue(sentBodies.stream().allMatch(b -> b.equals("{\"name\":\"William\"}")));
+        assertTrue(sentBodies.stream().allMatch(b -> b.equals("{\"name\":\"Alex\"}")));
         assertEquals(5, state.completed.get());
         assertEquals(5, state.successful.get());
     }

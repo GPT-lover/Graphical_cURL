@@ -129,7 +129,7 @@ class DynamicVariableResolverTest {
                 "POST", "https://example.com/a?b=c",
                 List.of(new HeaderDto("Content-Type", "application/json")),
                 List.of(new CookieDto("session", "abc")),
-                "{\"name\":\"William\"}", null);
+                "{\"name\":\"Alex\"}", null);
 
         SendRequestDto resolved = resolver.resolveRequest(original);
 

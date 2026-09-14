@@ -56,10 +56,10 @@ class CurlParserServiceTest {
     void test4_postBody() {
         String cmd = "curl 'https://example.com/api' \\\n"
                 + "  -H 'content-type: application/json' \\\n"
-                + "  --data-raw '{\"name\":\"William\"}'";
+                + "  --data-raw '{\"name\":\"Alex\"}'";
         ParsedRequestDto r = parser.parse(cmd);
         assertEquals("POST", r.method());
-        assertEquals("{\"name\":\"William\"}", r.body());
+        assertEquals("{\"name\":\"Alex\"}", r.body());
     }
 
     @Test
@@ -89,7 +89,7 @@ class CurlParserServiceTest {
                 + "  -H 'content-type: application/json' \\\n"
                 + "  -H 'x-test: hello' \\\n"
                 + "  -b 'session=xyz789; theme=dark' \\\n"
-                + "  --data-raw '{\"name\":\"William\"}' \\\n"
+                + "  --data-raw '{\"name\":\"Alex\"}' \\\n"
                 + "  --compressed";
         ParsedRequestDto r = parser.parse(cmd);
 
@@ -101,7 +101,7 @@ class CurlParserServiceTest {
         assertEquals(
                 List.of(new CookieDto("session", "xyz789"), new CookieDto("theme", "dark")),
                 r.cookies());
-        assertEquals("{\"name\":\"William\"}", r.body());
+        assertEquals("{\"name\":\"Alex\"}", r.body());
     }
 
     // ---- Extra coverage --------------------------------------------------

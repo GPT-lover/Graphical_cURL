@@ -48,10 +48,10 @@ class CurlGeneratorServiceTest {
     void test2_postJson() {
         String curl = gen.generate(req("POST", "https://example.com/api",
                 List.of(new HeaderDto("Content-Type", "application/json")), List.of(),
-                "{\"name\":\"William\"}"));
+                "{\"name\":\"Alex\"}"));
         assertTrue(curl.contains("-X POST"));
         assertTrue(curl.contains("-H 'Content-Type: application/json'"));
-        assertTrue(curl.contains("--data-raw '{\"name\":\"William\"}'"));
+        assertTrue(curl.contains("--data-raw '{\"name\":\"Alex\"}'"));
     }
 
     @Test

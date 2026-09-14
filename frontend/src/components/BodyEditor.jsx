@@ -1,6 +1,6 @@
 const BODY_PLACEHOLDER = `{
-  "name": "William",
-  "age": 19
+  "name": "Alex",
+  "age": 27
 }`
 
 /**

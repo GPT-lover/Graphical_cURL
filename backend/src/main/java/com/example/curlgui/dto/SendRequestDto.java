@@ -10,7 +10,7 @@ import java.util.List;
  *   "method": "POST",
  *   "url": "https://httpbin.org/post",
  *   "headers": [ { "key": "Content-Type", "value": "application/json" } ],
- *   "body": "{\"name\":\"William\"}"
+ *   "body": "{\"name\":\"Alex\"}"
  * }
  * </pre>
  *
