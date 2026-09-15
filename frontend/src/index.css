@@ -731,6 +731,18 @@ code {
   border-color: var(--accent-hover);
 }
 
+.btn--import {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
+  font-weight: 600;
+}
+
+.btn--import:hover {
+  background: #e6e6e6;
+  border-color: #e6e6e6;
+}
+
 .btn--ghost {
   background: transparent;
   border-style: dashed;

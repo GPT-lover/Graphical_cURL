@@ -87,7 +87,7 @@ export default function RequestEditor({
           <button type="button" className="btn" onClick={onNewRequest}>
             New Request
           </button>
-          <button type="button" className="btn" onClick={onImportClick}>
+          <button type="button" className="btn btn--import" onClick={onImportClick}>
             Import cURL
           </button>
         </div>
