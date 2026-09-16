@@ -93,7 +93,7 @@ export default function ImportCurlModal({ open, onClose, onImported }) {
 
         <p className="modal__hint">
           In Chrome DevTools open <strong>Network</strong>, right-click a request,
-          choose <strong>Copy → Copy as cURL</strong>, then paste it here. Nothing
+          choose <strong>Copy → Copy as cURL (bash)</strong>, then paste it here. Nothing
           is sent until you review it and press Send.
         </p>
 
