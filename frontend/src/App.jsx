@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import FeaturesPage from './pages/FeaturesPage.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import RequestEditor from './components/RequestEditor.jsx'
 import ResponsePanel from './components/ResponsePanel.jsx'
@@ -29,6 +30,17 @@ import {
   updateSavedRequest,
 } from './api/client.js'
 
+/** Tracks `window.location.hash` so the app can switch to a standalone page (e.g. #/features). */
+function useHashRoute() {
+  const [hash, setHash] = useState(() => window.location.hash)
+  useEffect(() => {
+    const onHashChange = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+  return hash
+}
+
 /**
  * Top-level layout and cross-cutting wiring.
  *
@@ -42,6 +54,7 @@ import {
  *                     null. Drives Save vs Update / Save As.
  */
 export default function App() {
+  const route = useHashRoute()
   const { request, loadRequest, resetRequest, ...actions } = useRequest()
   const history = useHistory()
   const collections = useCollections()
@@ -278,6 +291,10 @@ export default function App() {
 
   const defaultCollectionId =
     saved?.collectionId ?? collections.collections[0]?.id ?? null
+
+  if (route === '#/features') {
+    return <FeaturesPage />
+  }
 
   return (
     <div className="app">

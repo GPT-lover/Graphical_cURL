@@ -512,6 +512,76 @@ code {
   padding: 0.2rem 0.5rem;
 }
 
+/* ---- Inline links (hints, Features page) --------------------------- */
+
+.hint-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.hint-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Features page --------------------------------------------------- */
+
+.features-page {
+  overflow-y: auto;
+}
+
+.features-page__content {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.features-page__title {
+  font-size: 1.4rem;
+}
+
+.features-page__intro {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.features-page__feature p {
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 0.6rem;
+}
+
+.features-page__list {
+  margin: 0 0 0.85rem;
+  padding-left: 1.1rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  font-size: 0.92rem;
+}
+
+.features-page__list li + li {
+  margin-top: 0.3rem;
+}
+
+.features-page__example {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+}
+
+.features-page__example code {
+  background: none;
+  padding: 0;
+}
+
 /* ---- Environment bar ------------------------------------------- */
 
 .env-bar {
