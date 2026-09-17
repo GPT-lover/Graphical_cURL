@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 const MAX_RUNS = 5000
 const WARN_OVER = 1000
 const MAX_DELAY = 60000
+const MAX_JITTER = 60000
+const MAX_WINDOW_SECONDS = 3600
 
 function statusClassOf(result) {
   const c = result.classification
@@ -20,12 +22,22 @@ function statusClassOf(result) {
  * Props:
  *   open, onClose
  *   run  - the object from useRunMultiple()
- *   onRun({ runs, delayMs, mode })  - App adds the request snapshot + env and starts
+ *   onRun({ runs, delayMs, mode, delayMode, jitterMs, windowMs })
+ *        - App adds the request snapshot + env and starts
+ *
+ * Pacing (`delayMode`) picks how the pause between iterations is computed:
+ *   FIXED  - `delayMs` between every iteration (the original behaviour)
+ *   JITTER - a fresh random delay per iteration, `delayMs` +/- `jitterMs`
+ *   WINDOW - all `runs` iterations dispatched at random, irregularly-spaced
+ *            times within the next `windowMs` (entered in seconds in the UI)
  */
 export default function RunMultipleModal({ open, onClose, run, onRun }) {
   const [runs, setRuns] = useState('10')
   const [delayMs, setDelayMs] = useState('100')
   const [mode, setMode] = useState('SEQUENTIAL')
+  const [delayMode, setDelayMode] = useState('FIXED')
+  const [jitterMs, setJitterMs] = useState('0')
+  const [windowSeconds, setWindowSeconds] = useState('60')
   const [formError, setFormError] = useState(null)
   const [pendingCount, setPendingCount] = useState(null) // set when the >1000 warning is shown
 
@@ -54,7 +66,14 @@ export default function RunMultipleModal({ open, onClose, run, onRun }) {
 
   function beginRun(n, d) {
     setPendingCount(null)
-    onRun({ runs: n, delayMs: d, mode })
+    onRun({
+      runs: n,
+      delayMs: d,
+      mode,
+      delayMode,
+      jitterMs: Number(jitterMs),
+      windowMs: Number(windowSeconds) * 1000,
+    })
   }
 
   function handleRunClick() {
@@ -75,6 +94,28 @@ export default function RunMultipleModal({ open, onClose, run, onRun }) {
     if (d > MAX_DELAY) {
       setFormError(`Delay must be ${MAX_DELAY} ms or less.`)
       return
+    }
+    if (delayMode === 'JITTER') {
+      const j = Number(jitterMs)
+      if (!Number.isInteger(j) || j < 0) {
+        setFormError('Jitter must be 0 ms or more.')
+        return
+      }
+      if (j > MAX_JITTER) {
+        setFormError(`Jitter must be ${MAX_JITTER} ms or less.`)
+        return
+      }
+    }
+    if (delayMode === 'WINDOW') {
+      const w = Number(windowSeconds)
+      if (!Number.isFinite(w) || w <= 0) {
+        setFormError('Window duration must be greater than 0 seconds.')
+        return
+      }
+      if (w > MAX_WINDOW_SECONDS) {
+        setFormError(`Window duration must be ${MAX_WINDOW_SECONDS} seconds or less.`)
+        return
+      }
     }
     setFormError(null)
     if (n > WARN_OVER) {
@@ -132,17 +173,89 @@ export default function RunMultipleModal({ open, onClose, run, onRun }) {
                 onChange={(e) => setRuns(e.target.value)}
               />
             </label>
-            <label className="field">
-              <span className="field__label">Delay between requests (ms)</span>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                max={MAX_DELAY}
-                value={delayMs}
-                onChange={(e) => setDelayMs(e.target.value)}
-              />
-            </label>
+            <fieldset className="field pacing-mode">
+              <span className="field__label">Pacing</span>
+              <div className="pacing-mode__options">
+                <label>
+                  <input
+                    type="radio"
+                    name="delay-mode"
+                    checked={delayMode === 'FIXED'}
+                    onChange={() => setDelayMode('FIXED')}
+                  />{' '}
+                  Fixed delay
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="delay-mode"
+                    checked={delayMode === 'JITTER'}
+                    onChange={() => setDelayMode('JITTER')}
+                  />{' '}
+                  Random jitter
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="delay-mode"
+                    checked={delayMode === 'WINDOW'}
+                    onChange={() => setDelayMode('WINDOW')}
+                  />{' '}
+                  Rate window
+                </label>
+              </div>
+
+              {delayMode !== 'WINDOW' && (
+                <label className="field pacing-mode__field">
+                  <span className="field__label">
+                    {delayMode === 'JITTER' ? 'Base delay (ms)' : 'Delay between requests (ms)'}
+                  </span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max={MAX_DELAY}
+                    value={delayMs}
+                    onChange={(e) => setDelayMs(e.target.value)}
+                  />
+                </label>
+              )}
+              {delayMode === 'JITTER' && (
+                <label className="field pacing-mode__field">
+                  <span className="field__label">&plusmn; Jitter (ms)</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max={MAX_JITTER}
+                    value={jitterMs}
+                    onChange={(e) => setJitterMs(e.target.value)}
+                  />
+                  <span className="field__hint">
+                    Each request waits a random amount between {Math.max(0, Number(delayMs) - Number(jitterMs)) || 0}{' '}
+                    and {Number(delayMs) + Number(jitterMs) || 0} ms.
+                  </span>
+                </label>
+              )}
+              {delayMode === 'WINDOW' && (
+                <label className="field pacing-mode__field">
+                  <span className="field__label">Spread over (seconds)</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max={MAX_WINDOW_SECONDS}
+                    value={windowSeconds}
+                    onChange={(e) => setWindowSeconds(e.target.value)}
+                  />
+                  <span className="field__hint">
+                    All {runs || 0} runs are dispatched at random, irregularly-spaced times within the next{' '}
+                    {windowSeconds || 0} seconds - not spread evenly.
+                  </span>
+                </label>
+              )}
+            </fieldset>
+
             <fieldset className="field run-mode">
               <span className="field__label">Execution mode</span>
               <label>
@@ -235,6 +348,11 @@ export default function RunMultipleModal({ open, onClose, run, onRun }) {
                 Failed: {run.progress.failed}
               </span>
               <span className="run-progress__mode">Mode: {run.mode}</span>
+              {running && run.progress.waiting && (
+                <span className="run-progress__stat">
+                  Waiting {run.progress.currentWaitMs} ms before the next request…
+                </span>
+              )}
             </div>
 
             {finished && run.summary && (

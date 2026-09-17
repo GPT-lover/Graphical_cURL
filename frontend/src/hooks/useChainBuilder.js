@@ -4,7 +4,7 @@ let nextStepId = 1
 
 /**
  * Holds the ordered list of requests that make up a "Request Chain", the loop
- * count and the between-loops cooldown, plus small helpers to
+ * count and the between-loops pacing, plus small helpers to
  * add/remove/reorder/edit steps.
  *
  * A step is a plain { id, method, url, headers, body } snapshot - the same
@@ -16,11 +16,20 @@ let nextStepId = 1
  * complete loop iterations - never between the requests inside one iteration,
  * and never after the last iteration. '0' (the default) means no cooldown and
  * preserves the original behaviour exactly.
+ *
+ * `delayMode` picks how that pause is computed: 'FIXED' (use `cooldown` as-is,
+ * the default), 'JITTER' (a fresh random pause per iteration, `cooldown` +/-
+ * `jitterMs`) or 'WINDOW' (all loop iterations - including the first, unlike
+ * FIXED/JITTER - dispatched at random, irregularly-spaced times within the
+ * next `windowSeconds` seconds).
  */
 export function useChainBuilder() {
   const [steps, setSteps] = useState([])
   const [loops, setLoops] = useState('1')
   const [cooldown, setCooldown] = useState('0')
+  const [delayMode, setDelayMode] = useState('FIXED')
+  const [jitterMs, setJitterMs] = useState('0')
+  const [windowSeconds, setWindowSeconds] = useState('60')
 
   const addStep = useCallback((snapshot) => {
     setSteps((prev) => [...prev, { id: nextStepId++, ...snapshot }])
@@ -58,6 +67,12 @@ export function useChainBuilder() {
     setLoops,
     cooldown,
     setCooldown,
+    delayMode,
+    setDelayMode,
+    jitterMs,
+    setJitterMs,
+    windowSeconds,
+    setWindowSeconds,
     addStep,
     removeStep,
     updateStep,

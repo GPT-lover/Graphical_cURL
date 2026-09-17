@@ -285,8 +285,11 @@ export function deleteVariable(envId, varId) {
 
 /**
  * POST /api/requests/run-multiple - start a loop. Returns { runId }.
- * `payload` = { request: {...SendRequestDto...}, runs, delayMs, mode }.
- * 400 if runs/delay/mode are invalid or an environment variable can't resolve.
+ * `payload` = { request: {...SendRequestDto...}, runs, delayMs, mode,
+ * delayMode, jitterMs, windowMs }. `delayMode` ('FIXED' | 'JITTER' | 'WINDOW',
+ * default 'FIXED') picks how the pause between iterations is computed -
+ * `jitterMs` only matters for JITTER, `windowMs` only for WINDOW.
+ * 400 if runs/delay/mode/pacing are invalid or an environment variable can't resolve.
  */
 export function startRunMultiple(payload) {
   return postJson('/api/requests/run-multiple', payload)
@@ -309,11 +312,14 @@ export function stopRunMultiple(runId) {
 
 /**
  * POST /api/requests/run-chain - start a chain run. Returns { chainId }.
- * `payload` = { requests: [...SendRequestDto], loops, cooldownMs }. Requests are
- * dispatched strictly in order but the chain never waits for one's HTTP response
- * before dispatching the next - see ChainRunner on the backend. `cooldownMs`
- * (optional, default 0) is the pause between complete loop iterations.
- * 400 if the chain/loop count/cooldown is invalid or an environment variable can't resolve.
+ * `payload` = { requests: [...SendRequestDto], loops, cooldownMs, delayMode,
+ * jitterMs, windowMs }. Requests are dispatched strictly in order but the chain
+ * never waits for one's HTTP response before dispatching the next - see
+ * ChainRunner on the backend. `cooldownMs` (optional, default 0) is the pause
+ * between complete loop iterations under FIXED pacing (the default); `delayMode`
+ * ('FIXED' | 'JITTER' | 'WINDOW') picks how that pause is computed - `jitterMs`
+ * only matters for JITTER, `windowMs` only for WINDOW.
+ * 400 if the chain/loop count/cooldown/pacing is invalid or an environment variable can't resolve.
  */
 export function startChain(payload) {
   return postJson('/api/requests/run-chain', payload)

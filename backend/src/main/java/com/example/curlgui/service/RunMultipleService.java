@@ -50,6 +50,10 @@ public class RunMultipleService {
     /** Backend safety limit - enforced regardless of the frontend. */
     static final int MAX_RUNS = 5000;
     static final long MAX_DELAY_MS = 60_000;
+    /** JITTER's +/- range is capped the same as a FIXED delay. */
+    static final long MAX_JITTER_MS = MAX_DELAY_MS;
+    /** WINDOW spreads the whole run across up to this many ms (1 hour). */
+    static final long MAX_WINDOW_MS = 3_600_000L;
     private static final long RETENTION_MS = 10 * 60 * 1000L;
 
     private final RequestService requestService;
@@ -93,6 +97,10 @@ public class RunMultipleService {
         int runCount = requireRuns(dto.runs());
         long delayMs = requireDelay(dto.delayMs());
         RunMode mode = parseMode(dto.mode());
+        DelayPlan.Mode delayMode = requireDelayMode(dto.delayMode());
+        long jitterMs = requireJitter(dto.jitterMs());
+        long windowMs = delayMode == DelayPlan.Mode.WINDOW ? requireWindow(dto.windowMs()) : 0;
+        DelayPlan delayPlan = DelayPlan.of(delayMode, delayMs, jitterMs, windowMs, runCount);
 
         // Resolve environment variables ONCE. If a placeholder is unknown this
         // throws (HTTP 400) and no run is created / no request is sent.
@@ -111,7 +119,7 @@ public class RunMultipleService {
         runs.put(id, state);
 
         SendRequestDto original = dto.request();
-        orchestrators.submit(() -> runLoop(state, resolved, original, delayMs));
+        orchestrators.submit(() -> runLoop(state, resolved, original, delayPlan));
         log.info("Run-multiple started: {} runs, {} mode", runCount, mode);
         return new RunStartedDto(id);
     }
@@ -129,6 +137,8 @@ public class RunMultipleService {
                 state.successful.get(),
                 state.redirects.get(),
                 state.failed.get(),
+                state.waiting,
+                state.currentWaitMs,
                 state.resultsFrom(offset),
                 summary);
     }
@@ -139,7 +149,7 @@ public class RunMultipleService {
 
     // ------------------------------------------------------------------
 
-    private void runLoop(RunState state, SendRequestDto resolved, SendRequestDto original, long delayMs) {
+    private void runLoop(RunState state, SendRequestDto resolved, SendRequestDto original, DelayPlan delayPlan) {
         Function<SendRequestDto, RunOutcome> oneRun = req -> {
             try {
                 SendResponseDto response = requestService.executeResolved(req);
@@ -151,7 +161,7 @@ public class RunMultipleService {
             }
         };
         try {
-            loopRunner.execute(state, resolved, delayMs, oneRun);
+            loopRunner.execute(state, resolved, delayPlan, oneRun);
         } catch (RuntimeException ex) {
             log.warn("Run-multiple loop ended abnormally: {}", ex.getClass().getSimpleName());
         } finally {
@@ -254,6 +264,44 @@ public class RunMultipleService {
         } catch (IllegalArgumentException ex) {
             throw new InvalidRequestException("Mode must be SEQUENTIAL or PARALLEL.");
         }
+    }
+
+    /** Missing/blank -&gt; FIXED, so existing clients and saved loops keep behaving exactly as before. */
+    static DelayPlan.Mode requireDelayMode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DelayPlan.Mode.FIXED;
+        }
+        try {
+            return DelayPlan.Mode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidRequestException("Delay mode must be FIXED, JITTER or WINDOW.");
+        }
+    }
+
+    /** Only meaningful under JITTER; null/missing -&gt; 0 (no jitter). */
+    static long requireJitter(Long jitterMs) {
+        long j = jitterMs == null ? 0L : jitterMs;
+        if (j < 0) {
+            throw new InvalidRequestException("Jitter must not be negative.");
+        }
+        if (j > MAX_JITTER_MS) {
+            throw new InvalidRequestException("Jitter must not exceed " + MAX_JITTER_MS + " ms.");
+        }
+        return j;
+    }
+
+    /** Only called (and required) under WINDOW pacing. */
+    static long requireWindow(Long windowMs) {
+        if (windowMs == null) {
+            throw new InvalidRequestException("A window duration is required for WINDOW pacing.");
+        }
+        if (windowMs <= 0) {
+            throw new InvalidRequestException("Window duration must be greater than 0 ms.");
+        }
+        if (windowMs > MAX_WINDOW_MS) {
+            throw new InvalidRequestException("Window duration must not exceed " + MAX_WINDOW_MS + " ms.");
+        }
+        return windowMs;
     }
 
     private static ThreadFactory daemon(String name) {

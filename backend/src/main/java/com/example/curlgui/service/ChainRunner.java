@@ -41,16 +41,19 @@ import jakarta.annotation.PreDestroy;
  * a chain of 20 requests looped 5000 times must not try to spawn 100000 OS
  * processes simultaneously.
  *
- * <h3>Cooldown between iterations</h3>
- * If {@code cooldownMs > 0}, the runner pauses for that long <b>between complete
- * loop iterations</b> - after every request of iteration N has been dispatched,
- * before the first request of iteration N+1 is dispatched. There is no pause
- * before the first iteration or after the last one, and never a pause between
- * the individual requests inside one iteration (dispatch order there is
- * unchanged: still immediate, still never waiting on a response). The wait runs
- * on the caller's (per-chain orchestrator) thread and is polled in short slices
- * so a {@code Stop} during the cooldown takes effect promptly instead of
- * blocking for the whole interval.
+ * <h3>Pacing between iterations</h3>
+ * Before dispatching each iteration's requests, the runner asks a {@link
+ * DelayPlan} how long to wait, given the iteration number and elapsed time.
+ * Under FIXED/JITTER pacing this is 0 for iteration 1 and a (fixed or
+ * per-iteration random) delay for every iteration after that - i.e. a pause
+ * <b>between</b> complete loop iterations, never before the first, never after
+ * the last, and never between the individual requests inside one iteration
+ * (dispatch order there is unchanged: still immediate, still never waiting on
+ * a response). Under WINDOW pacing every iteration, including the first, waits
+ * until its pre-computed random slot in the window arrives. The wait runs on
+ * the caller's (per-chain orchestrator) thread and is polled in short slices
+ * (see {@link InterruptibleSleep}) so a {@code Stop} during the wait takes
+ * effect promptly instead of blocking for the whole interval.
  *
  * <h3>Error handling</h3>
  * A failed request (network error, non-2xx, whatever {@code oneRun} reports) is
@@ -75,6 +78,19 @@ class ChainRunner {
     }
 
     /**
+     * Run the chain with fixed-delay pacing (the original behaviour). Kept for
+     * existing callers/tests; equivalent to {@code execute(state, resolvedChain,
+     * DelayPlan.fixed(cooldownMs), oneRun)}.
+     *
+     * @param cooldownMs pause between complete loop iterations, in ms; {@code 0}
+     *                   disables it
+     */
+    void execute(ChainState state, List<SendRequestDto> resolvedChain, long cooldownMs,
+                Function<SendRequestDto, RunOutcome> oneRun) {
+        execute(state, resolvedChain, DelayPlan.fixed(cooldownMs), oneRun);
+    }
+
+    /**
      * Run the chain. Dispatches every request of every iteration, in order,
      * without ever waiting on a request's result before dispatching the next
      * one. Blocks only at the very end, until every dispatched request has
@@ -84,20 +100,29 @@ class ChainRunner {
      *
      * @param resolvedChain the chain's requests, in dispatch order, already
      *                      variable-resolved
-     * @param cooldownMs    pause between complete loop iterations, in ms; {@code
-     *                      0} disables it (behaviour identical to before this
-     *                      parameter existed)
+     * @param delayPlan     how long to wait before each iteration - see
+     *                      {@link DelayPlan}
      * @param oneRun        performs one request and reports its outcome; never
      *                      throws (a failure is reported as a {@code RunOutcome}
      *                      with a non-null {@code error})
      */
-    void execute(ChainState state, List<SendRequestDto> resolvedChain, long cooldownMs,
+    void execute(ChainState state, List<SendRequestDto> resolvedChain, DelayPlan delayPlan,
                 Function<SendRequestDto, RunOutcome> oneRun) {
         int chainLength = resolvedChain.size();
         List<Future<?>> futures = new ArrayList<>();
+        long startNanos = System.nanoTime();
 
         iterations:
         for (int iteration = 1; iteration <= state.totalIterations; iteration++) {
+            if (state.cancelled.get()) {
+                break;
+            }
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
+            long waitMs = delayPlan.waitMs(iteration, elapsedMs);
+            if (waitMs > 0 && !state.cancelled.get()) {
+                cooldown(state, waitMs);
+            }
+
             for (int requestIndex = 0; requestIndex < chainLength; requestIndex++) {
                 if (state.cancelled.get()) {
                     break iterations; // stop dispatching new requests
@@ -119,12 +144,6 @@ class ChainRunner {
                 // Deliberately NOT awaiting `futures`' last element here - dispatching
                 // the next request must not wait for this one's response.
             }
-
-            // Cooldown BETWEEN iterations only: not after the final one, and not
-            // if a Stop has already been requested.
-            if (cooldownMs > 0 && iteration < state.totalIterations && !state.cancelled.get()) {
-                cooldown(state, cooldownMs);
-            }
         }
 
         // Every request has been dispatched (or the chain was stopped); now let
@@ -140,24 +159,15 @@ class ChainRunner {
     }
 
     /**
-     * Wait out the cooldown, but in short slices so a {@code Stop} pressed
-     * mid-cooldown is noticed within ~50ms rather than after the whole interval.
+     * Wait out {@code waitMs}, but in short slices so a {@code Stop} pressed
+     * mid-wait is noticed within ~50ms rather than after the whole interval.
      * Runs on the per-chain orchestrator thread (never an app-wide one).
      */
-    private static void cooldown(ChainState state, long cooldownMs) {
+    private static void cooldown(ChainState state, long waitMs) {
+        state.currentWaitMs = waitMs;
         state.coolingDown = true;
         try {
-            long deadlineNanos = System.nanoTime() + cooldownMs * 1_000_000L;
-            long remainingMs;
-            while (!state.cancelled.get()
-                    && (remainingMs = (deadlineNanos - System.nanoTime()) / 1_000_000L) > 0) {
-                try {
-                    Thread.sleep(Math.min(50L, remainingMs));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
+            InterruptibleSleep.sleep(waitMs, state.cancelled);
         } finally {
             state.coolingDown = false;
         }

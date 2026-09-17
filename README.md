@@ -62,6 +62,8 @@ Graphical cURL is designed as a simple alternative to tools such as Postman and 
 
   * Execute a request repeatedly
   * Sequential or bounded-parallel execution
+  * Fixed delay, random jitter, or rate-window pacing between runs (same three modes
+    available for Request Chain's between-loops cooldown)
   * Progress and success/failure statistics
 * **Desktop application**
 
@@ -577,16 +579,22 @@ These commands currently produce a clear unsupported-feature error rather than s
 
 # Run Multiple
 
-The **Run Multiple** feature allows a request to be executed repeatedly.
+The **Run Multiple** feature allows a request to be executed repeatedly. The same three pacing
+modes are also available on **Request Chain**'s between-loops cooldown.
 
 Configuration includes:
 
 * Number of runs
-* Delay between runs
+* Pacing between runs - one of:
+  * **Fixed** - the same delay between every run (the original behaviour)
+  * **Random jitter** - a fresh random delay per run, uniform within `delay +/- jitter`
+  * **Rate window** - all runs dispatched at random, irregularly-spaced times within a
+    fixed number of seconds (e.g. 50 runs spread somewhere across the next 100 seconds,
+    rather than evenly every 2 seconds)
 * Sequential execution
 * Parallel execution
 
-There is a hard limit of **5,000 runs** per operation.
+There is a hard limit of **5,000 runs** per operation, and a rate window is capped at **1 hour**.
 
 Parallel execution is bounded rather than creating thousands of simultaneous operating-system processes.
 

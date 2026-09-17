@@ -87,6 +87,63 @@ class RequestLoopRunnerTest {
         assertTrue(gap2Ms >= delay / 2, "expected a delay between requests, gap was " + gap2Ms + "ms");
     }
 
+    // ---- pacing modes (DelayPlan) --------------------------------
+
+    @Test
+    void jitterModeStillSkipsTheDelayBeforeTheFirstRequest() {
+        RunState s = state(RunMode.SEQUENTIAL, 3);
+        long t0 = System.nanoTime();
+        long[] firstEntry = new long[1];
+        AtomicInteger i = new AtomicInteger();
+
+        runner.execute(s, REQ, DelayPlan.jitter(100, 20), req -> {
+            if (i.getAndIncrement() == 0) {
+                firstEntry[0] = System.nanoTime();
+            }
+            return ok(1);
+        });
+
+        long beforeFirstMs = (firstEntry[0] - t0) / 1_000_000;
+        assertTrue(beforeFirstMs < 80, "there should be no delay before the first request");
+        assertEquals(3, s.completed.get());
+    }
+
+    @Test
+    void jitterModeVariesTheGapBetweenRequests() {
+        RunState s = state(RunMode.SEQUENTIAL, 8);
+        long[] entry = new long[8];
+        AtomicInteger i = new AtomicInteger();
+
+        runner.execute(s, REQ, DelayPlan.jitter(60, 60), req -> {
+            entry[i.getAndIncrement()] = System.nanoTime();
+            return ok(1);
+        });
+
+        java.util.Set<Long> gapsMs = new java.util.HashSet<>();
+        for (int n = 1; n < 8; n++) {
+            gapsMs.add((entry[n] - entry[n - 1]) / 1_000_000);
+        }
+        assertTrue(gapsMs.size() > 1, "expected varying gaps under JITTER, got " + gapsMs);
+    }
+
+    @Test
+    void windowModeSpreadsAllIterationsWithinTheWindowIncludingTheFirst() {
+        RunState s = state(RunMode.SEQUENTIAL, 20);
+        long windowMs = 300;
+        long t0 = System.nanoTime();
+        long[] lastEntry = new long[1];
+
+        runner.execute(s, REQ, DelayPlan.window(windowMs, 20), req -> {
+            lastEntry[0] = System.nanoTime();
+            return ok(1);
+        });
+
+        long totalMs = (lastEntry[0] - t0) / 1_000_000;
+        assertEquals(20, s.completed.get());
+        // Generous upper bound: every dispatch must land within (about) the window.
+        assertTrue(totalMs <= windowMs + 200, "run took " + totalMs + "ms, window was " + windowMs + "ms");
+    }
+
     // ---- parallel -----------------------------------------------
 
     @Test

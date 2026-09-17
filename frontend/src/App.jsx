@@ -80,7 +80,7 @@ export default function App() {
 
   // Start a loop: snapshot the current request + active environment. The backend
   // runs this snapshot; editing the editor afterwards does not affect it.
-  function handleRunMultiple({ runs, delayMs, mode }) {
+  function handleRunMultiple({ runs, delayMs, mode, delayMode, jitterMs, windowMs }) {
     runMultiple.start({
       request: {
         ...toRequestPayload(request),
@@ -89,6 +89,9 @@ export default function App() {
       runs,
       delayMs,
       mode,
+      delayMode,
+      jitterMs,
+      windowMs,
     })
     // The loop records ONE sanitised History entry when it finishes; the sidebar
     // picks it up when the dialog is closed (see closeRunMultiple).
@@ -117,7 +120,7 @@ export default function App() {
   // Start the chain: each step already carries its own method/url/headers/body:
   // just attach the active environment so {{variables}} resolve the same way
   // Send and Run Multiple do.
-  function handleRunChain({ requests, loops, cooldownMs }) {
+  function handleRunChain({ requests, loops, cooldownMs, delayMode, jitterMs, windowMs }) {
     chainRun.start({
       requests: requests.map((step) => ({
         method: step.method,
@@ -128,6 +131,9 @@ export default function App() {
       })),
       loops,
       cooldownMs,
+      delayMode,
+      jitterMs,
+      windowMs,
     })
   }
 

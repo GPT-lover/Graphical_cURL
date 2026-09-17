@@ -50,4 +50,36 @@ class RunMultipleValidationTest {
         assertEquals(RunMode.SEQUENTIAL, RunMultipleService.parseMode("  "));
         assertThrows(InvalidRequestException.class, () -> RunMultipleService.parseMode("DIAGONAL"));
     }
+
+    @Test
+    void delayModeParsing() {
+        assertEquals(DelayPlan.Mode.FIXED, RunMultipleService.requireDelayMode(null)); // default
+        assertEquals(DelayPlan.Mode.FIXED, RunMultipleService.requireDelayMode("  "));
+        assertEquals(DelayPlan.Mode.FIXED, RunMultipleService.requireDelayMode("fixed"));
+        assertEquals(DelayPlan.Mode.JITTER, RunMultipleService.requireDelayMode("JITTER"));
+        assertEquals(DelayPlan.Mode.WINDOW, RunMultipleService.requireDelayMode("window"));
+        assertThrows(InvalidRequestException.class, () -> RunMultipleService.requireDelayMode("RANDOM"));
+    }
+
+    @Test
+    void jitterRange() {
+        assertEquals(0, RunMultipleService.requireJitter(null)); // absent -> no jitter
+        assertEquals(0, RunMultipleService.requireJitter(0L));
+        assertEquals(50, RunMultipleService.requireJitter(50L));
+        assertEquals(RunMultipleService.MAX_JITTER_MS, RunMultipleService.requireJitter(RunMultipleService.MAX_JITTER_MS));
+        assertThrows(InvalidRequestException.class, () -> RunMultipleService.requireJitter(-1L));
+        assertThrows(InvalidRequestException.class,
+                () -> RunMultipleService.requireJitter(RunMultipleService.MAX_JITTER_MS + 1));
+    }
+
+    @Test
+    void windowRange() {
+        assertEquals(100_000, RunMultipleService.requireWindow(100_000L));
+        assertEquals(RunMultipleService.MAX_WINDOW_MS, RunMultipleService.requireWindow(RunMultipleService.MAX_WINDOW_MS));
+        assertThrows(InvalidRequestException.class, () -> RunMultipleService.requireWindow(null));
+        assertThrows(InvalidRequestException.class, () -> RunMultipleService.requireWindow(0L));
+        assertThrows(InvalidRequestException.class, () -> RunMultipleService.requireWindow(-1L));
+        assertThrows(InvalidRequestException.class,
+                () -> RunMultipleService.requireWindow(RunMultipleService.MAX_WINDOW_MS + 1));
+    }
 }

@@ -48,6 +48,8 @@ class ChainState {
     volatile Status status = Status.RUNNING;
     /** True only while {@link ChainRunner} is waiting out the cooldown between iterations. */
     volatile boolean coolingDown;
+    /** The actual wait duration currently (or most recently) in effect - varies per iteration under JITTER/WINDOW pacing. */
+    volatile long currentWaitMs;
     volatile long lastTouchedAtMillis = System.currentTimeMillis();
 
     final AtomicBoolean cancelled = new AtomicBoolean(false);

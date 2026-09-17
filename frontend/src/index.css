@@ -1298,6 +1298,44 @@ code {
   gap: 0.35rem;
 }
 
+/* ---- Pacing mode selector (Run Multiple + Request Chain) --------- */
+
+.pacing-mode {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pacing-mode__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+}
+
+.pacing-mode__options label {
+  font-size: 0.85rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pacing-mode__field {
+  padding: 0.6rem 0.7rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.field__hint {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+
 .run-progress {
   display: flex;
   flex-wrap: wrap;

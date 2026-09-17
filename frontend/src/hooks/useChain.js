@@ -13,6 +13,7 @@ const EMPTY_PROGRESS = {
   failed: 0,
   cooldownMs: 0,
   coolingDown: false,
+  currentWaitMs: 0,
 }
 
 function slotKey(result) {
@@ -88,6 +89,7 @@ export function useChain() {
         failed: s.failed,
         cooldownMs: s.cooldownMs ?? 0,
         coolingDown: s.coolingDown ?? false,
+        currentWaitMs: s.currentWaitMs ?? 0,
       })
 
       if (s.status === 'RUNNING') {

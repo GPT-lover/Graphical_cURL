@@ -6,7 +6,15 @@ import {
 } from '../api/client.js'
 
 const POLL_MS = 400
-const EMPTY_PROGRESS = { total: 0, completed: 0, successful: 0, redirects: 0, failed: 0 }
+const EMPTY_PROGRESS = {
+  total: 0,
+  completed: 0,
+  successful: 0,
+  redirects: 0,
+  failed: 0,
+  waiting: false,
+  currentWaitMs: 0,
+}
 
 /**
  * Drives a "run multiple" loop: POST to start, then poll status until the
@@ -14,7 +22,9 @@ const EMPTY_PROGRESS = { total: 0, completed: 0, successful: 0, redirects: 0, fa
  * freezes. Results arrive incrementally (only ones the client doesn't have yet).
  *
  *   phase     - 'idle' | 'running' | 'done' | 'stopped' | 'error'
- *   progress  - { total, completed, successful, redirects, failed }
+ *   progress  - { total, completed, successful, redirects, failed, waiting, currentWaitMs }
+ *               waiting/currentWaitMs reflect the pacing pause currently (or most
+ *               recently) in effect between iterations.
  *   results   - [{ run, status, durationMs, error, classification }]
  *   summary   - RunSummaryDto once finished, else null
  *   mode      - 'SEQUENTIAL' | 'PARALLEL'
@@ -55,6 +65,8 @@ export function useRunMultiple() {
         successful: s.successful,
         redirects: s.redirects,
         failed: s.failed,
+        waiting: s.waiting ?? false,
+        currentWaitMs: s.currentWaitMs ?? 0,
       })
       setMode(s.mode)
 

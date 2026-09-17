@@ -4,6 +4,8 @@ import { HTTP_METHODS } from '../constants/httpMethods.js'
 const MAX_LOOPS = 5000
 const MAX_CHAIN_LENGTH = 20
 const MAX_COOLDOWN_MS = 60000
+const MAX_JITTER_MS = 60000
+const MAX_WINDOW_SECONDS = 3600
 
 function phaseClass(result) {
   if (result.classification == null) return 'pending'
@@ -30,9 +32,11 @@ function phaseLabel(result) {
  *
  * Props:
  *   open, onClose
- *   chain - the object from useChainBuilder() (steps, loops, add/remove/move/update)
+ *   chain - the object from useChainBuilder() (steps, loops, add/remove/move/update,
+ *           plus the pacing config: cooldown, delayMode, jitterMs, windowSeconds)
  *   run   - the object from useChain()
- *   onRun({ requests, loops }) - App adds the active environment and starts
+ *   onRun({ requests, loops, cooldownMs, delayMode, jitterMs, windowMs })
+ *        - App adds the active environment and starts
  */
 export default function ChainModal({ open, onClose, chain, run, onRun }) {
   const [formError, setFormError] = useState(null)
@@ -85,8 +89,37 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
       setFormError(`Cooldown must be ${MAX_COOLDOWN_MS} ms or less.`)
       return
     }
+    if (chain.delayMode === 'JITTER') {
+      const j = Number(chain.jitterMs)
+      if (!Number.isInteger(j) || j < 0) {
+        setFormError('Jitter must be 0 ms or more.')
+        return
+      }
+      if (j > MAX_JITTER_MS) {
+        setFormError(`Jitter must be ${MAX_JITTER_MS} ms or less.`)
+        return
+      }
+    }
+    if (chain.delayMode === 'WINDOW') {
+      const w = Number(chain.windowSeconds)
+      if (!Number.isFinite(w) || w <= 0) {
+        setFormError('Window duration must be greater than 0 seconds.')
+        return
+      }
+      if (w > MAX_WINDOW_SECONDS) {
+        setFormError(`Window duration must be ${MAX_WINDOW_SECONDS} seconds or less.`)
+        return
+      }
+    }
     setFormError(null)
-    onRun({ requests: chain.steps, loops: n, cooldownMs })
+    onRun({
+      requests: chain.steps,
+      loops: n,
+      cooldownMs,
+      delayMode: chain.delayMode,
+      jitterMs: Number(chain.jitterMs),
+      windowMs: Number(chain.windowSeconds) * 1000,
+    })
   }
 
   const running = run.phase === 'running'
@@ -220,17 +253,90 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
               />
             </label>
 
-            <label className="field">
-              <span className="field__label">Cooldown between loops (ms)</span>
-              <input
-                className="input"
-                type="number"
-                min="0"
-                max={MAX_COOLDOWN_MS}
-                value={chain.cooldown}
-                onChange={(e) => chain.setCooldown(e.target.value)}
-              />
-            </label>
+            <fieldset className="field pacing-mode">
+              <span className="field__label">Pacing between loops</span>
+              <div className="pacing-mode__options">
+                <label>
+                  <input
+                    type="radio"
+                    name="chain-delay-mode"
+                    checked={chain.delayMode === 'FIXED'}
+                    onChange={() => chain.setDelayMode('FIXED')}
+                  />{' '}
+                  Fixed cooldown
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="chain-delay-mode"
+                    checked={chain.delayMode === 'JITTER'}
+                    onChange={() => chain.setDelayMode('JITTER')}
+                  />{' '}
+                  Random jitter
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="chain-delay-mode"
+                    checked={chain.delayMode === 'WINDOW'}
+                    onChange={() => chain.setDelayMode('WINDOW')}
+                  />{' '}
+                  Rate window
+                </label>
+              </div>
+
+              {chain.delayMode !== 'WINDOW' && (
+                <label className="field pacing-mode__field">
+                  <span className="field__label">
+                    {chain.delayMode === 'JITTER' ? 'Base cooldown (ms)' : 'Cooldown between loops (ms)'}
+                  </span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max={MAX_COOLDOWN_MS}
+                    value={chain.cooldown}
+                    onChange={(e) => chain.setCooldown(e.target.value)}
+                  />
+                </label>
+              )}
+              {chain.delayMode === 'JITTER' && (
+                <label className="field pacing-mode__field">
+                  <span className="field__label">&plusmn; Jitter (ms)</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max={MAX_JITTER_MS}
+                    value={chain.jitterMs}
+                    onChange={(e) => chain.setJitterMs(e.target.value)}
+                  />
+                  <span className="field__hint">
+                    Each loop iteration waits a random amount between{' '}
+                    {Math.max(0, Number(chain.cooldown) - Number(chain.jitterMs)) || 0} and{' '}
+                    {Number(chain.cooldown) + Number(chain.jitterMs) || 0} ms.
+                  </span>
+                </label>
+              )}
+              {chain.delayMode === 'WINDOW' && (
+                <label className="field pacing-mode__field">
+                  <span className="field__label">Spread over (seconds)</span>
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max={MAX_WINDOW_SECONDS}
+                    value={chain.windowSeconds}
+                    onChange={(e) => chain.setWindowSeconds(e.target.value)}
+                  />
+                  <span className="field__hint">
+                    All {chain.loops || 0} loop iterations are dispatched at random,
+                    irregularly-spaced times within the next {chain.windowSeconds || 0} seconds -
+                    including the first, not spread evenly.
+                  </span>
+                </label>
+              )}
+            </fieldset>
 
             {formError && (
               <div className="modal__error" role="alert">
@@ -288,7 +394,7 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
               </span>
               {running && run.progress.coolingDown && (
                 <span className="run-progress__stat">
-                  Waiting {run.progress.cooldownMs} ms before the next loop…
+                  Waiting {run.progress.currentWaitMs} ms before the next loop…
                 </span>
               )}
             </div>

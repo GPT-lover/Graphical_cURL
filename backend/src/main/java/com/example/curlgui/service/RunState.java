@@ -26,6 +26,10 @@ class RunState {
     volatile long finishedAtNanos;
     volatile Status status = Status.RUNNING;
     volatile long lastTouchedAtMillis = System.currentTimeMillis();
+    /** True only while {@link RequestLoopRunner} is waiting out the pause before the next iteration. */
+    volatile boolean waiting;
+    /** The actual wait duration currently (or most recently) in effect - varies per iteration under JITTER/WINDOW pacing. */
+    volatile long currentWaitMs;
 
     final AtomicBoolean cancelled = new AtomicBoolean(false);
     final AtomicInteger completed = new AtomicInteger();

@@ -58,6 +58,10 @@ public class ChainService {
     static final int MAX_TOTAL_DISPATCHES = 20_000;
     /** Upper bound on the between-iterations cooldown; matches run-multiple's delay cap. */
     static final long MAX_COOLDOWN_MS = 60_000;
+    /** JITTER's +/- range is capped the same as a FIXED cooldown. */
+    static final long MAX_JITTER_MS = MAX_COOLDOWN_MS;
+    /** WINDOW spreads the whole chain run across up to this many ms (1 hour). */
+    static final long MAX_WINDOW_MS = 3_600_000L;
     private static final long RETENTION_MS = 10 * 60 * 1000L;
 
     private final RequestService requestService;
@@ -98,6 +102,10 @@ public class ChainService {
         int chainLength = requireChainLength(dto.requests().size());
         int loops = requireLoops(dto.loops());
         long cooldownMs = requireCooldown(dto.cooldownMs());
+        DelayPlan.Mode delayMode = requireDelayMode(dto.delayMode());
+        long jitterMs = requireJitter(dto.jitterMs());
+        long windowMs = delayMode == DelayPlan.Mode.WINDOW ? requireWindow(dto.windowMs()) : 0;
+        DelayPlan delayPlan = DelayPlan.of(delayMode, cooldownMs, jitterMs, windowMs, loops);
         if (chainLength * loops > MAX_TOTAL_DISPATCHES) {
             throw new InvalidRequestException(
                     "This chain would dispatch " + (chainLength * loops) + " requests; the maximum is "
@@ -126,7 +134,7 @@ public class ChainService {
         ChainState state = new ChainState(id, chainLength, loops, cooldownMs);
         chains.put(id, state);
 
-        orchestrators.submit(() -> runChain(state, resolved));
+        orchestrators.submit(() -> runChain(state, resolved, delayPlan));
         log.info("Chain started: {} request(s) x {} loop(s), {} ms cooldown", chainLength, loops, cooldownMs);
         return new ChainStartedDto(id);
     }
@@ -146,6 +154,7 @@ public class ChainService {
                 state.failed.get(),
                 state.cooldownMs,
                 state.status == ChainState.Status.RUNNING && state.coolingDown,
+                state.currentWaitMs,
                 state.resultsFrom(offset),
                 state.status == ChainState.Status.RUNNING ? null : state.summary());
     }
@@ -156,7 +165,7 @@ public class ChainService {
 
     // ------------------------------------------------------------------
 
-    private void runChain(ChainState state, List<SendRequestDto> resolved) {
+    private void runChain(ChainState state, List<SendRequestDto> resolved, DelayPlan delayPlan) {
         Function<SendRequestDto, RunOutcome> oneRun = req -> {
             try {
                 SendResponseDto response = requestService.executeResolved(req);
@@ -168,7 +177,7 @@ public class ChainService {
             }
         };
         try {
-            chainRunner.execute(state, resolved, state.cooldownMs, oneRun);
+            chainRunner.execute(state, resolved, delayPlan, oneRun);
         } catch (RuntimeException ex) {
             log.warn("Chain run ended abnormally: {}", ex.getClass().getSimpleName());
         } finally {
@@ -231,6 +240,44 @@ public class ChainService {
             throw new InvalidRequestException("Cooldown must not exceed " + MAX_COOLDOWN_MS + " ms.");
         }
         return c;
+    }
+
+    /** Missing/blank -&gt; FIXED, so existing clients and saved chains keep behaving exactly as before. */
+    static DelayPlan.Mode requireDelayMode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DelayPlan.Mode.FIXED;
+        }
+        try {
+            return DelayPlan.Mode.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidRequestException("Delay mode must be FIXED, JITTER or WINDOW.");
+        }
+    }
+
+    /** Only meaningful under JITTER; null/missing -&gt; 0 (no jitter). */
+    static long requireJitter(Long jitterMs) {
+        long j = jitterMs == null ? 0L : jitterMs;
+        if (j < 0) {
+            throw new InvalidRequestException("Jitter must not be negative.");
+        }
+        if (j > MAX_JITTER_MS) {
+            throw new InvalidRequestException("Jitter must not exceed " + MAX_JITTER_MS + " ms.");
+        }
+        return j;
+    }
+
+    /** Only called (and required) under WINDOW pacing. */
+    static long requireWindow(Long windowMs) {
+        if (windowMs == null) {
+            throw new InvalidRequestException("A window duration is required for WINDOW pacing.");
+        }
+        if (windowMs <= 0) {
+            throw new InvalidRequestException("Window duration must be greater than 0 ms.");
+        }
+        if (windowMs > MAX_WINDOW_MS) {
+            throw new InvalidRequestException("Window duration must not exceed " + MAX_WINDOW_MS + " ms.");
+        }
+        return windowMs;
     }
 
     private static ThreadFactory daemon(String name) {

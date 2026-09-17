@@ -26,6 +26,13 @@ import jakarta.annotation.PreDestroy;
  * thread per run - PARALLEL mode submits to a <b>bounded</b> pool of
  * {@link #PARALLEL_CONCURRENCY} workers, so 5000 runs still means at most 20
  * in flight.
+ *
+ * <p>Pacing between iterations is delegated to a {@link DelayPlan}: FIXED (the
+ * original behaviour - the same delay between every iteration, never before
+ * the first), JITTER (a fresh random delay per iteration) or WINDOW (a
+ * pre-computed schedule spreading every iteration irregularly across a fixed
+ * wall-clock window). The {@code long delayMs} overload is kept for existing
+ * callers/tests and is exactly {@code DelayPlan.fixed(delayMs)}.
  */
 @Component
 class RequestLoopRunner {
@@ -50,22 +57,27 @@ class RequestLoopRunner {
      */
     void execute(RunState state, SendRequestDto resolved, long delayMs,
                  Function<SendRequestDto, RunOutcome> oneRun) {
+        execute(state, resolved, DelayPlan.fixed(delayMs), oneRun);
+    }
+
+    /** Same as above, but with full control over pacing via {@link DelayPlan}. */
+    void execute(RunState state, SendRequestDto resolved, DelayPlan delayPlan,
+                 Function<SendRequestDto, RunOutcome> oneRun) {
         if (state.mode == RunMode.SEQUENTIAL) {
-            runSequential(state, resolved, delayMs, oneRun);
+            runSequential(state, resolved, delayPlan, oneRun);
         } else {
-            runParallel(state, resolved, delayMs, oneRun);
+            runParallel(state, resolved, delayPlan, oneRun);
         }
     }
 
-    private void runSequential(RunState state, SendRequestDto resolved, long delayMs,
+    private void runSequential(RunState state, SendRequestDto resolved, DelayPlan delayPlan,
                                Function<SendRequestDto, RunOutcome> oneRun) {
+        long startNanos = System.nanoTime();
         for (int run = 1; run <= state.total; run++) {
             if (state.cancelled.get()) {
                 return;
             }
-            if (run > 1 && delayMs > 0) {
-                sleep(delayMs); // delay BETWEEN requests - not before the first
-            }
+            waitFor(state, delayPlan, run, startNanos); // delay BETWEEN requests - not before the first (FIXED/JITTER)
             if (state.cancelled.get()) {
                 return;
             }
@@ -73,16 +85,15 @@ class RequestLoopRunner {
         }
     }
 
-    private void runParallel(RunState state, SendRequestDto resolved, long delayMs,
+    private void runParallel(RunState state, SendRequestDto resolved, DelayPlan delayPlan,
                              Function<SendRequestDto, RunOutcome> oneRun) {
         List<Future<?>> futures = new ArrayList<>();
+        long startNanos = System.nanoTime();
         for (int run = 1; run <= state.total; run++) {
             if (state.cancelled.get()) {
                 break; // stop starting new requests
             }
-            if (run > 1 && delayMs > 0) {
-                sleep(delayMs); // delay between STARTS; already-started ones keep running
-            }
+            waitFor(state, delayPlan, run, startNanos); // delay between STARTS; already-started ones keep running
             if (state.cancelled.get()) {
                 break;
             }
@@ -105,17 +116,25 @@ class RequestLoopRunner {
         }
     }
 
+    /** Computes and, if positive, performs the wait before iteration {@code run}, tracking it on {@code state}. */
+    private void waitFor(RunState state, DelayPlan delayPlan, int run, long startNanos) {
+        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000L;
+        long waitMs = delayPlan.waitMs(run, elapsedMs);
+        if (waitMs <= 0) {
+            return;
+        }
+        state.currentWaitMs = waitMs;
+        state.waiting = true;
+        try {
+            InterruptibleSleep.sleep(waitMs, state.cancelled);
+        } finally {
+            state.waiting = false;
+        }
+    }
+
     private RunResultDto toResult(int run, RunOutcome outcome) {
         return new RunResultDto(run, outcome.status(), outcome.durationMs(), outcome.error(),
                 RunClassification.classify(outcome));
-    }
-
-    private void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 
     private static java.util.concurrent.ThreadFactory daemon(String name) {

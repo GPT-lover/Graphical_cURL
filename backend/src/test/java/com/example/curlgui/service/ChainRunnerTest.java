@@ -494,4 +494,64 @@ class ChainRunnerTest {
         assertEquals(2, s.dispatched.get(),
                 "only the first iteration's requests should have been dispatched before the stop");
     }
+
+    // ---- pacing modes (DelayPlan) --------------------------------
+
+    @Test
+    void jitterModeStillSkipsTheWaitBeforeTheFirstIteration() {
+        ChainState s = state(1, 3);
+        List<SendRequestDto> chain = List.of(req("https://example.com/only"));
+        long t0 = System.nanoTime();
+        long[] firstDispatchNanos = new long[1];
+        AtomicInteger i = new AtomicInteger();
+
+        runner.execute(s, chain, DelayPlan.jitter(100, 20), r -> {
+            if (i.getAndIncrement() == 0) {
+                firstDispatchNanos[0] = System.nanoTime();
+            }
+            return ok(1);
+        });
+
+        long beforeFirstMs = (firstDispatchNanos[0] - t0) / 1_000_000;
+        assertTrue(beforeFirstMs < 80, "there should be no wait before the first iteration");
+        assertEquals(3, s.completed.get());
+    }
+
+    @Test
+    void windowModeWaitsBeforeTheFirstIterationAndFinishesWithinTheWindow() {
+        ChainState s = state(1, 15); // 15 iterations, 1 request each
+        List<SendRequestDto> chain = List.of(req("https://example.com/only"));
+        long windowMs = 300;
+        long t0 = System.nanoTime();
+        long[] lastCompletionNanos = new long[1];
+
+        runner.execute(s, chain, DelayPlan.window(windowMs, 15), r -> {
+            lastCompletionNanos[0] = System.nanoTime();
+            return ok(1);
+        });
+
+        long totalMs = (lastCompletionNanos[0] - t0) / 1_000_000;
+        assertEquals(15, s.completed.get());
+        assertTrue(totalMs <= windowMs + 200, "run took " + totalMs + "ms, window was " + windowMs + "ms");
+    }
+
+    @Test
+    void windowModeNeverWaitsBetweenTheRequestsInsideOneIteration() {
+        // A 3-request chain, 1 loop, large window: only iteration 1 exists, so
+        // its (possibly nonzero) wait happens once before dispatch, never between
+        // the chain's own 3 requests.
+        ChainState s = state(3, 1);
+        List<SendRequestDto> chain = List.of(
+                req("https://example.com/r1"), req("https://example.com/r2"), req("https://example.com/r3"));
+
+        long t0 = System.nanoTime();
+        runner.execute(s, chain, DelayPlan.window(5000, 1), r -> ok(1));
+        long totalMs = (System.nanoTime() - t0) / 1_000_000;
+
+        assertEquals(3, s.completed.get());
+        // The one pre-dispatch wait can be up to ~5000ms, but once dispatching
+        // starts all 3 requests go out immediately - so this must be nowhere near
+        // 3x the window.
+        assertTrue(totalMs < 5000 + 200, "run took " + totalMs + "ms - looks like extra waits crept in");
+    }
 }
