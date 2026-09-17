@@ -69,7 +69,7 @@ class RequestLoopRunner {
             if (state.cancelled.get()) {
                 return;
             }
-            state.record(toResult(run, oneRun.apply(resolved)));
+            state.record(toResult(run, IterationContext.runWith(run, () -> oneRun.apply(resolved))));
         }
     }
 
@@ -91,7 +91,8 @@ class RequestLoopRunner {
                 if (state.cancelled.get()) {
                     return; // a queued task that only got scheduled after Stop
                 }
-                state.record(toResult(runNumber, oneRun.apply(resolved)));
+                state.record(toResult(runNumber,
+                        IterationContext.runWith(runNumber, () -> oneRun.apply(resolved))));
             }));
         }
         // Let the in-flight requests finish; their results are kept.

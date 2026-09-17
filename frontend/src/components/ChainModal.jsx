@@ -133,6 +133,9 @@ export default function ChainModal({ open, onClose, chain, run, onRun }) {
               Tip: <code>{'{{random(50)}}'}</code> anywhere in a request (URL, headers,
               cookies or body) is replaced with a new random 50-character alphanumeric
               string for every dispatch, so each request in each loop gets its own value.
+              Use <code>{'{{increment(1)}}'}</code> instead for a counter that starts at
+              1 and goes up by 1 on each loop iteration (shared by every request in that
+              iteration).
             </p>
 
             <div className="chain-steps">

@@ -156,11 +156,102 @@ class DynamicVariableResolverTest {
         assertNull(resolved.body());
     }
 
+    // ---- increment ---------------------------------------------------
+
+    @Test
+    void incrementResolvesToItsStartValueOnIterationOne() {
+        assertEquals("1", resolver.resolve("{{increment(1)}}", 1));
+        assertEquals("0", resolver.resolve("{{increment(0)}}", 1));
+        assertEquals("100", resolver.resolve("{{increment(100)}}", 1));
+    }
+
+    @Test
+    void incrementCountsUpByOnePerIteration() {
+        assertEquals("1", resolver.resolve("{{increment(1)}}", 1));
+        assertEquals("2", resolver.resolve("{{increment(1)}}", 2));
+        assertEquals("3", resolver.resolve("{{increment(1)}}", 3));
+    }
+
+    @Test
+    void incrementAcceptsANegativeStart() {
+        assertEquals("-3", resolver.resolve("{{increment(-3)}}", 1));
+        assertEquals("-1", resolver.resolve("{{increment(-3)}}", 3));
+        assertEquals("2", resolver.resolve("{{increment(-3)}}", 6));
+    }
+
+    @Test
+    void resolveWithoutAnIterationArgumentBehavesAsIterationOne() {
+        assertEquals("5", resolver.resolve("{{increment(5)}}"));
+    }
+
+    @Test
+    void everyOccurrenceOfIncrementInOneStringSharesTheSameIterationValue() {
+        assertEquals("7-7", resolver.resolve("{{increment(1)}}-{{increment(1)}}", 7));
+    }
+
+    @Test
+    void toleratesWhitespaceInsideTheIncrementTemplate() {
+        assertEquals("4", resolver.resolve("{{ increment( 1 ) }}", 4));
+    }
+
+    @Test
+    void incrementAndRandomCanBeMixedInOneString() {
+        String out = resolver.resolve("id-{{increment(1)}}-{{random(10)}}", 3);
+        assertTrue(out.startsWith("id-3-"), out);
+        assertEquals(10, out.substring("id-3-".length()).length());
+    }
+
+    @Test
+    void resolveRequestAppliesTheGivenIterationEverywhere() {
+        SendRequestDto original = new SendRequestDto(
+                "POST",
+                "https://example.com/items/{{increment(1)}}",
+                List.of(new HeaderDto("X-Seq", "{{increment(1)}}")),
+                List.of(new CookieDto("seq", "{{increment(1)}}")),
+                "{\"id\":{{increment(1)}}}",
+                null);
+
+        SendRequestDto resolved = resolver.resolveRequest(original, 5);
+
+        assertEquals("https://example.com/items/5", resolved.url());
+        assertEquals("5", resolved.headers().get(0).value());
+        assertEquals("5", resolved.cookies().get(0).value());
+        assertEquals("{\"id\":5}", resolved.body());
+        // The stored request still carries its templates and is reusable.
+        assertEquals("https://example.com/items/{{increment(1)}}", original.url());
+    }
+
     // ---- malformed templates ---------------------------------------
 
     @Test
     void randomWithoutParenthesesIsLeftForTheEnvironmentResolver() {
         assertEquals("{{random}}", resolver.resolve("{{random}}"));
+    }
+
+    @Test
+    void incrementWithoutParenthesesIsLeftForTheEnvironmentResolver() {
+        assertEquals("{{increment}}", resolver.resolve("{{increment}}"));
+    }
+
+    @Test
+    void aMissingOrNonNumericStartIsRejected() {
+        for (String bad : List.of("{{increment()}}", "{{increment(abc)}}", "{{increment( )}}",
+                "{{increment(5.5)}}")) {
+            InvalidRequestException ex = assertThrows(InvalidRequestException.class,
+                    () -> resolver.resolve(bad, 1), bad + " should be rejected");
+            assertTrue(ex.getMessage().contains("increment"), ex.getMessage());
+        }
+    }
+
+    @Test
+    void anOutOfRangeIncrementStartIsRejected() {
+        long tooBig = DynamicVariableResolver.MAX_INCREMENT_MAGNITUDE + 1;
+        for (String bad : List.of("{{increment(" + tooBig + ")}}", "{{increment(-" + tooBig + ")}}",
+                "{{increment(999999999999)}}")) {
+            InvalidRequestException ex = assertThrows(InvalidRequestException.class,
+                    () -> resolver.resolve(bad, 1), bad + " should be rejected");
+            assertTrue(ex.getMessage().contains("out of range"), ex.getMessage());
+        }
     }
 
     @Test

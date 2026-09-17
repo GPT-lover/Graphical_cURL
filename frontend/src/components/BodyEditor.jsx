@@ -27,7 +27,9 @@ export default function BodyEditor({ value, onChange }) {
       <p className="panel__hint">
         Sent as raw text. Not parsed or validated yet. Use{' '}
         <code>{'{{random(50)}}'}</code> anywhere in the URL, headers, cookies or body
-        for a new 50-character alphanumeric value on every request sent.
+        for a new 50-character alphanumeric value on every request sent, or{' '}
+        <code>{'{{increment(1)}}'}</code> for a counter that starts at 1 and goes up
+        by 1 on every loop/chain iteration.
       </p>
     </section>
   )

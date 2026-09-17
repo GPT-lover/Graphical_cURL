@@ -169,6 +169,8 @@ export default function RunMultipleModal({ open, onClose, run, onRun }) {
               Tip: <code>{'{{random(50)}}'}</code> anywhere in the request (URL, headers,
               cookies or body) is replaced with a new random 50-character alphanumeric
               string for <em>every</em> iteration. Each occurrence gets its own value.
+              Use <code>{'{{increment(1)}}'}</code> instead for a counter that starts at
+              1 and goes up by 1 on each iteration.
             </p>
 
             {formError && <div className="modal__error" role="alert">{formError}</div>}

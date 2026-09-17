@@ -44,6 +44,15 @@ Graphical cURL is designed as a simple alternative to tools such as Postman and 
   * Resolved immediately before each request is sent, so every loop iteration and every
     chained request gets a freshly generated value
   * Each occurrence gets its own value; lengths from 1 to 4096 are allowed
+* **Dynamic incrementing values**
+
+  * Use `{{increment(1)}}` for a counter that starts at `1` and goes up by 1 on every
+    loop/chain iteration (`{{increment(0)}}` starts at `0`, `{{increment(100)}}` at `100`,
+    negative starts work too)
+  * Works in URLs, headers, cookies, and request bodies - handy for a request body field
+    that needs a unique, predictable sequence number per request
+  * Every occurrence in the same request shares that iteration's value, so
+    `{{increment(1)}}` used twice in one body always shows the same number
 * **Response viewer**
 
   * Response body, headers, and raw response views

@@ -104,6 +104,7 @@ class ChainRunner {
                 }
                 int slot = state.markDispatched(iteration, requestIndex);
                 SendRequestDto request = resolvedChain.get(requestIndex);
+                int currentIteration = iteration;
                 futures.add(workers.submit(() -> {
                     if (state.cancelled.get()) {
                         // Already dispatched (its slot exists and was counted),
@@ -112,7 +113,8 @@ class ChainRunner {
                         state.markCompleted(slot, new RunOutcome(null, null, "Cancelled"));
                         return;
                     }
-                    state.markCompleted(slot, oneRun.apply(request));
+                    state.markCompleted(slot,
+                            IterationContext.runWith(currentIteration, () -> oneRun.apply(request)));
                 }));
                 // Deliberately NOT awaiting `futures`' last element here - dispatching
                 // the next request must not wait for this one's response.

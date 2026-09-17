@@ -113,11 +113,14 @@ public class RequestService {
     }
 
     private SendResponseDto executeResolved(SendRequestDto request, boolean logProxyLine) {
-        // Dynamic {{random(N)}} templates are resolved HERE - once per actual
-        // send, on a copy - so every loop iteration, every parallel worker and
-        // every chain dispatch gets its own freshly generated value while the
+        // Dynamic {{random(N)}} / {{increment(N)}} templates are resolved HERE -
+        // once per actual send, on a copy - so every loop iteration, every
+        // parallel worker and every chain dispatch gets its own freshly
+        // generated random value and the right increment value, while the
         // caller's request keeps its templates for the next iteration.
-        SendRequestDto resolved = dynamicResolver.resolveRequest(request);
+        // IterationContext.current() is 1 for a plain Send; RequestLoopRunner and
+        // ChainRunner set it to the real iteration number around this call.
+        SendRequestDto resolved = dynamicResolver.resolveRequest(request, IterationContext.current());
         String method = normaliseMethod(resolved.method());
         URI uri = parseAndValidateUrl(resolved.url());
         String body = resolved.body() == null ? "" : resolved.body();
