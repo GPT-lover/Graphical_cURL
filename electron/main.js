@@ -239,6 +239,17 @@ function wireLifecycle() {
     return false
   })
 
+  // Native "Browse" file picker for the Hydra tool (executable / wordlist
+  // paths). Returns the chosen absolute path, or null if the user cancelled.
+  ipcMain.handle('curl-gui:pick-file', async (_evt, options) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: (options && options.title) || 'Select a file',
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
+
   app.on('window-all-closed', () => {
     // Windows target: quitting when the window closes is the expected behaviour.
     app.quit()

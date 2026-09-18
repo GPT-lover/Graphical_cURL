@@ -339,3 +339,58 @@ export function getChainStatus(chainId, offset = 0) {
 export function stopChain(chainId) {
   return postJson(`/api/requests/run-chain/${chainId}/stop`, {})
 }
+
+// ---- Hydra (external tool) ------------------------------------------
+//
+// Graphical cURL never bundles or reimplements Hydra - these calls configure
+// and launch an already-installed external `hydra` executable through the
+// backend (which uses ProcessBuilder with an argument list, never a shell).
+// Two execution modes: 'LOCAL' (a native executable) or 'WSL' (Hydra installed
+// inside a WSL distribution, e.g. Kali Linux - the backend invokes it via
+// `wsl.exe -d <wslDistro> -- <wslHydraPath> ...`).
+
+/**
+ * GET /api/hydra/settings - the saved execution settings:
+ * { executionMode, executablePath, wslDistro, wslHydraPath }.
+ */
+export function fetchHydraSettings() {
+  return getJson('/api/hydra/settings')
+}
+
+/**
+ * PUT /api/hydra/settings - same shape as fetchHydraSettings's result.
+ * Returns the saved (normalised) settings.
+ */
+export function updateHydraSettings(settings) {
+  return putJson('/api/hydra/settings', settings)
+}
+
+/**
+ * POST /api/hydra/detect - runs Hydra's `-h` (directly, or via
+ * `wsl.exe -d <distro> -- <path> -h` for WSL mode) and reports whether it
+ * looks like Hydra. Pass the settings object to test unsaved edits (e.g. a
+ * path just typed into the settings form); omit it to test the saved settings.
+ */
+export function detectHydra(settings) {
+  return postJson('/api/hydra/detect', settings)
+}
+
+/**
+ * POST /api/hydra/attacks - start an http-post-form / https-post-form attack.
+ * `payload` = { host, port, protocol, username, wordlistPath, path, formParams,
+ * failureCondition }. Returns { attackId }. 409 if an attack is already
+ * running; 400 for an unconfigured/missing executable or invalid config.
+ */
+export function startHydraAttack(payload) {
+  return postJson('/api/hydra/attacks', payload)
+}
+
+/** GET /api/hydra/attacks/{attackId}?offset=N - new output lines since offset. */
+export function getHydraAttackStatus(attackId, offset = 0) {
+  return getJson(`/api/hydra/attacks/${attackId}?offset=${offset}`)
+}
+
+/** POST /api/hydra/attacks/{attackId}/stop - terminate the running process. */
+export function stopHydraAttack(attackId) {
+  return postJson(`/api/hydra/attacks/${attackId}/stop`, {})
+}

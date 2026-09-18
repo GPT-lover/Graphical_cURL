@@ -16,9 +16,11 @@ import { useEnvironments } from './hooks/useEnvironments.js'
 import { useRunMultiple } from './hooks/useRunMultiple.js'
 import { useChain } from './hooks/useChain.js'
 import { useChainBuilder } from './hooks/useChainBuilder.js'
+import { useHydra } from './hooks/useHydra.js'
 import EnvironmentModal from './components/EnvironmentModal.jsx'
 import RunMultipleModal from './components/RunMultipleModal.jsx'
 import ChainModal from './components/ChainModal.jsx'
+import HydraModal from './components/HydraModal.jsx'
 import { toRequestPayload } from './lib/request.js'
 import {
   createCollection,
@@ -39,6 +41,30 @@ function useHashRoute() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
   return hash
+}
+
+/**
+ * Best-effort guess at Hydra's target/path/form fields from the request
+ * currently loaded in the editor. Deliberately simple (see App - Hydra
+ * integration): if the URL doesn't parse, or the body isn't a plain
+ * `key=value&...` string, the corresponding fields are just left for the user
+ * to fill in manually rather than attempting anything cleverer.
+ */
+function hydraPrefillFromRequest(req) {
+  const prefill = { host: '', port: '', protocol: 'http', path: '/', formParams: '' }
+  try {
+    const u = new URL(req.url)
+    prefill.protocol = u.protocol === 'https:' ? 'https' : 'http'
+    prefill.host = u.hostname
+    prefill.port = u.port || (prefill.protocol === 'https' ? '443' : '80')
+    prefill.path = u.pathname || '/'
+  } catch {
+    // leave the defaults; the user fills in the target manually
+  }
+  if (typeof req.body === 'string' && /^[^=&]+=[^&]*(&[^=&]+=[^&]*)*$/.test(req.body.trim())) {
+    prefill.formParams = req.body.trim()
+  }
+  return prefill
 }
 
 /**
@@ -64,11 +90,14 @@ export default function App() {
   const runMultiple = useRunMultiple()
   const chainBuilder = useChainBuilder()
   const chainRun = useChain()
+  const hydra = useHydra()
 
   const [importOpen, setImportOpen] = useState(false)
   const [envModalOpen, setEnvModalOpen] = useState(false)
   const [runMultipleOpen, setRunMultipleOpen] = useState(false)
   const [chainModalOpen, setChainModalOpen] = useState(false)
+  const [hydraModalOpen, setHydraModalOpen] = useState(false)
+  const [hydraPrefill, setHydraPrefill] = useState(null)
   const [saved, setSaved] = useState(null)
   const [saveModal, setSaveModal] = useState({ open: false, mode: 'save' })
 
@@ -146,6 +175,20 @@ export default function App() {
     if (chainRun.phase === 'running') chainRun.stop()
     setChainModalOpen(false)
     chainRun.reset()
+  }
+
+  // --- Hydra ----------------------------------------------------------
+
+  function openHydra() {
+    hydra.reset()
+    setHydraPrefill(hydraPrefillFromRequest(request))
+    setHydraModalOpen(true)
+  }
+
+  function closeHydra() {
+    if (hydra.phase === 'running') hydra.stop()
+    setHydraModalOpen(false)
+    hydra.reset()
   }
 
   // --- helpers ------------------------------------------------------
@@ -333,6 +376,7 @@ export default function App() {
             onAddToChain={handleAddToChain}
             onOpenChain={openChain}
             chainStepCount={chainBuilder.steps.length}
+            onOpenHydra={openHydra}
             savedRequestName={saved?.name ?? null}
             onNewRequest={handleNewRequest}
             onSave={() => setSaveModal({ open: true, mode: 'save' })}
@@ -397,6 +441,8 @@ export default function App() {
         run={chainRun}
         onRun={handleRunChain}
       />
+
+      <HydraModal open={hydraModalOpen} onClose={closeHydra} hydra={hydra} prefill={hydraPrefill} />
     </div>
   )
 }
