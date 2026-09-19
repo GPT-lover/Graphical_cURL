@@ -139,6 +139,40 @@ class MultipartUploadIntegrationTest {
                 "must contain the real file's bytes, not a different file's content");
     }
 
+    /**
+     * Regression test for a real bug found reproducing a Next.js Server Action
+     * file upload: a {@code --form-string} value that itself contains a bare
+     * {@code "} with no adjacent whitespace (e.g. a JSON args array like
+     * {@code ["$K1"]}) reached curl.exe with its quote characters silently
+     * stripped - {@code ["$K1"]} arrived as {@code [$K1]} - because the JDK's
+     * {@code ProcessBuilder} only wraps a Windows argv entry in quotes when it
+     * contains whitespace, and never escapes an embedded {@code "} either way
+     * (see {@link WindowsArgvEscape}). The server's own {@code JSON.parse} of
+     * that field then throws, which is exactly the 500 the real report
+     * described. Passes on every OS: POSIX never had this bug (no argv
+     * re-serialisation step to corrupt), so this only proves the fix on
+     * Windows and proves there is no regression elsewhere.
+     */
+    @Test
+    void multipartTextFieldContainingABareQuoteWithNoWhitespaceSurvivesIntact() throws IOException {
+        SendResponseDto response = requestService.executeResolved(multipartDto(
+                baseUrl + "/echo", List.of(),
+                List.of(new MultipartFieldDto("file", "_1_file", writeTempFile("x"), "image/webp"),
+                        new MultipartFieldDto("text", "0", "[\"$K1\"]", null))));
+
+        assertEquals(200, response.statusCode());
+        String received = new String(capturedBody.get(), StandardCharsets.UTF_8);
+        assertTrue(received.contains("name=\"0\""));
+        assertTrue(received.contains("[\"$K1\"]"),
+                "the field's literal value, quotes included, must reach the server unchanged");
+    }
+
+    private String writeTempFile(String content) throws IOException {
+        Path file = tempDir.resolve("upload-" + System.nanoTime() + ".webp");
+        Files.write(file, content.getBytes(StandardCharsets.UTF_8));
+        return file.toString();
+    }
+
     @Test
     void multipartFilePathContainingSemicolonIsRejectedRatherThanRiskingCorruption() throws IOException {
         Path file = tempDir.resolve("a;b.jpg");

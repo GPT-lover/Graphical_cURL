@@ -174,7 +174,13 @@ public class CurlProcessExecutor {
                     isMultipart ? "multipart" : (isBinary ? "binary" : "raw"), bodyBytesCount,
                     isMultipart ? multipart.size() : 0, cookieResult.value() != null);
 
-            ProcessBuilder pb = new ProcessBuilder(argv);
+            // Windows-only: see WindowsArgvEscape for why an argv element
+            // containing a space, tab or '"' needs pre-encoding here rather
+            // than being handed to ProcessBuilder as-is.
+            // Windows-only: see WindowsArgvEscape for why an argv element
+            // containing a space, tab or '"' needs pre-encoding here rather
+            // than being handed to ProcessBuilder as-is.
+            ProcessBuilder pb = new ProcessBuilder(windowsEscapeAll(argv));
             pb.redirectOutput(stdoutFile.toFile());
             pb.redirectError(stderrFile.toFile());
 
@@ -463,6 +469,18 @@ public class CurlProcessExecutor {
 
     private static int positiveOr(Integer value, int fallback) {
         return (value != null && value > 0) ? value : fallback;
+    }
+
+    /** No-op on non-Windows; see {@link WindowsArgvEscape}. */
+    private static List<String> windowsEscapeAll(List<String> argv) {
+        if (!WindowsArgvEscape.isWindows()) {
+            return argv;
+        }
+        List<String> escaped = new ArrayList<>(argv.size());
+        for (String arg : argv) {
+            escaped.add(WindowsArgvEscape.forCurrentOs(arg));
+        }
+        return escaped;
     }
 
     private static boolean hasHeaderNamed(List<HeaderDto> headers, String name) {
