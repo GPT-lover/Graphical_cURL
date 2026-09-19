@@ -44,6 +44,7 @@ export default function HydraModal({ open, onClose, hydra, prefill }) {
   const [wordlistPath, setWordlistPath] = useState('')
   const [path, setPath] = useState('/')
   const [formParams, setFormParams] = useState('username=^USER^&password=^PASS^')
+  const [cookies, setCookies] = useState('')
   const [failureCondition, setFailureCondition] = useState('')
   const [formError, setFormError] = useState(null)
 
@@ -161,6 +162,7 @@ export default function HydraModal({ open, onClose, hydra, prefill }) {
       wordlistPath: wordlistPath.trim(),
       path: path.trim(),
       formParams: formParams.trim(),
+      cookies: cookies.trim(),
       failureCondition: failureCondition.trim(),
     })
   }
@@ -419,6 +421,19 @@ export default function HydraModal({ open, onClose, hydra, prefill }) {
                 <span className="field__hint">
                   Use <code>^USER^</code> and <code>^PASS^</code> where the username and password
                   should be substituted.
+                </span>
+              </label>
+              <label className="field hydra-form-grid__wide">
+                <span className="field__label">Cookies</span>
+                <input
+                  className="input"
+                  type="text"
+                  value={cookies}
+                  onChange={(e) => setCookies(e.target.value)}
+                  placeholder="session=abc123; csrftoken=xyz789"
+                />
+                <span className="field__hint">
+                  Optional. Cookie header value to include with HTTP authentication attempts.
                 </span>
               </label>
               <label className="field hydra-form-grid__wide">

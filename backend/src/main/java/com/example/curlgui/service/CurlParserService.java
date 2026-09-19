@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.ParsedRequestDto;
 
 /**
@@ -65,13 +66,14 @@ public class CurlParserService {
      * import with a clear message rather than sending a different request.
      */
     private static final Set<String> UNSUPPORTED = Set.of(
-            "-F", "--form", "--form-string", "-T", "--upload-file",
+            "-T", "--upload-file",
             "--data-urlencode", "-G", "--get",
             "-E", "--cert", "--key", "--cacert", "--pinnedpubkey"
     );
 
+    /** {@code --data-binary} is handled separately (see the switch) so a leading {@code @} reads a local file. */
     private static final Set<String> DATA_OPTIONS = Set.of(
-            "-d", "--data", "--data-raw", "--data-ascii", "--data-binary"
+            "-d", "--data", "--data-raw", "--data-ascii"
     );
 
     public ParsedRequestDto parse(String curl) {
@@ -91,6 +93,8 @@ public class CurlParserService {
         StringBuilder body = new StringBuilder();
         boolean hasData = false;
         List<String> warnings = new ArrayList<>();
+        List<MultipartFieldDto> multipartFields = new ArrayList<>();
+        String binaryFilePath = null;
 
         // Transport options taken verbatim from the command (see CurlOptionsDto).
         boolean optCompressed = false;
@@ -234,6 +238,55 @@ public class CurlParserService {
                     }
                 }
 
+                // ---- multipart/form-data fields ----
+                case "-F", "--form" -> {
+                    String raw = value(option, inlineValue, tokens, i);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                    parseFormField(raw, multipartFields, warnings);
+                    hasData = true;
+                }
+                case "--form-string" -> {
+                    String raw = value(option, inlineValue, tokens, i);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                    int eq = raw.indexOf('=');
+                    if (eq < 0) {
+                        warnings.add("Ignored a --form-string field with no '=' separator.");
+                    } else {
+                        String name = raw.substring(0, eq);
+                        if (name.isBlank()) {
+                            warnings.add("Ignored a --form-string field with an empty name.");
+                        } else {
+                            multipartFields.add(new MultipartFieldDto("text", name, raw.substring(eq + 1), null));
+                        }
+                    }
+                    hasData = true;
+                }
+
+                // ---- raw binary body from a local file ----
+                case "--data-binary" -> {
+                    String v = value(option, inlineValue, tokens, i);
+                    if (inlineValue == null) {
+                        i++;
+                    }
+                    if (v.startsWith("@") && v.length() > 1) {
+                        if (binaryFilePath != null || body.length() > 0) {
+                            warnings.add("Only one --data-binary file is supported; using the first.");
+                        } else {
+                            binaryFilePath = v.substring(1);
+                        }
+                    } else {
+                        if (body.length() > 0) {
+                            body.append('&');
+                        }
+                        body.append(v);
+                    }
+                    hasData = true;
+                }
+
                 default -> {
                     if (DATA_OPTIONS.contains(option)) {
                         String v = value(option, inlineValue, tokens, i);
@@ -284,13 +337,123 @@ public class CurlParserService {
                 optCompressed, optHttpVersion, optFollowRedirects, optInsecure,
                 optConnectTimeout, optMaxTime, optProxy, optProxyUser);
 
-        // Counts / flags only - never values, never the proxy string.
-        log.info("Imported cURL: method={}, headers={}, cookies={}, hasBody={}, "
+        String bodyType;
+        String finalBody;
+        List<MultipartFieldDto> multipart;
+        if (!multipartFields.isEmpty()) {
+            bodyType = "multipart";
+            finalBody = "";
+            multipart = multipartFields;
+        } else if (binaryFilePath != null) {
+            bodyType = "binary";
+            finalBody = binaryFilePath;
+            multipart = null;
+        } else {
+            bodyType = "raw";
+            finalBody = body.toString();
+            multipart = null;
+        }
+
+        // Counts / flags only - never values, never the proxy string, never a file path.
+        log.info("Imported cURL: method={}, headers={}, cookies={}, bodyType={}, multipartFields={}, "
                         + "compressed={}, httpVersion={}, followRedirects={}, insecure={}, proxy={}",
-                method, headers.size(), cookies.size(), body.length() > 0,
+                method, headers.size(), cookies.size(), bodyType, multipartFields.size(),
                 optCompressed, optHttpVersion, optFollowRedirects, optInsecure, optProxy != null);
 
-        return new ParsedRequestDto(method, url, headers, cookies, body.toString(), warnings, options);
+        return new ParsedRequestDto(method, url, headers, cookies, finalBody, warnings, options,
+                bodyType, multipart);
+    }
+
+    /**
+     * Parse one {@code -F}/{@code --form} value: {@code name=value} where value
+     * is a literal text value, or - if it starts with {@code @} - a local file to
+     * attach (optionally followed by {@code ;type=<mime>}, and/or a quoted path
+     * to protect embedded {@code ;}/{@code ,}, e.g. {@code image=@"a;b.jpg"}).
+     * {@code name=<file} (read the field's literal value from a file's contents)
+     * is not modelled as a distinct field type and is dropped with a warning.
+     */
+    private void parseFormField(String raw, List<MultipartFieldDto> out, List<String> warnings) {
+        int eq = raw.indexOf('=');
+        if (eq < 0) {
+            warnings.add("Ignored a -F/--form field with no '=' separator.");
+            return;
+        }
+        String name = raw.substring(0, eq);
+        if (name.isBlank()) {
+            warnings.add("Ignored a -F/--form field with an empty name.");
+            return;
+        }
+        String rest = raw.substring(eq + 1);
+        if (rest.startsWith("@") && rest.length() > 1) {
+            FormFilePart parsed = parseFormFilePart(rest.substring(1));
+            if (parsed.path().isEmpty()) {
+                warnings.add("Ignored a -F/--form file field (\"" + name + "\") with an empty path.");
+                return;
+            }
+            out.add(new MultipartFieldDto("file", name, parsed.path(), parsed.contentType()));
+        } else if (rest.startsWith("<")) {
+            warnings.add("Ignored a -F/--form field (\"" + name
+                    + "\") that reads its value from a file's contents ('<') - not supported.");
+        } else {
+            out.add(new MultipartFieldDto("text", name, rest, null));
+        }
+    }
+
+    private record FormFilePart(String path, String contentType) {
+    }
+
+    /**
+     * Parse the part of a {@code -F} file field after the {@code @}: an optional
+     * {@code "quoted path"} (curl's own quoting, not shell quoting - {@code \"}
+     * and {@code \\} are unescaped, everything else is literal, so Windows paths
+     * with single backslashes round-trip untouched) or an unquoted path read up
+     * to the first {@code ;}/{@code ,}, followed by optional {@code ;type=<mime>}
+     * (and other {@code ;key=value} parameters, e.g. {@code ;filename=}, which are
+     * recognised but not modelled - silently ignored).
+     */
+    private FormFilePart parseFormFilePart(String s) {
+        int i = 0;
+        String path;
+        if (i < s.length() && s.charAt(i) == '"') {
+            i++;
+            StringBuilder sb = new StringBuilder();
+            while (i < s.length() && s.charAt(i) != '"') {
+                char c = s.charAt(i);
+                if (c == '\\' && i + 1 < s.length() && (s.charAt(i + 1) == '"' || s.charAt(i + 1) == '\\')) {
+                    sb.append(s.charAt(i + 1));
+                    i += 2;
+                } else {
+                    sb.append(c);
+                    i++;
+                }
+            }
+            if (i < s.length()) {
+                i++; // consume the closing quote
+            }
+            path = sb.toString();
+        } else {
+            int end = i;
+            while (end < s.length() && s.charAt(end) != ';' && s.charAt(end) != ',') {
+                end++;
+            }
+            path = s.substring(i, end);
+            i = end;
+        }
+
+        String contentType = null;
+        while (i < s.length() && s.charAt(i) == ';') {
+            int next = s.indexOf(';', i + 1);
+            String param = next < 0 ? s.substring(i + 1) : s.substring(i + 1, next);
+            int paramEq = param.indexOf('=');
+            if (paramEq > 0) {
+                String key = param.substring(0, paramEq).trim().toLowerCase(Locale.ROOT);
+                if (key.equals("type")) {
+                    contentType = param.substring(paramEq + 1).trim();
+                }
+            }
+            i = next < 0 ? s.length() : next;
+        }
+        return new FormFilePart(path, contentType);
     }
 
     /** Parse a {@code --connect-timeout}/{@code --max-time} value into whole seconds. */

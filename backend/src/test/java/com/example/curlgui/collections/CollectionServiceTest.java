@@ -50,7 +50,8 @@ class CollectionServiceTest {
         collectionRepository.deleteAll();
         HeaderSanitizer sanitizer = new HeaderSanitizer(new SensitiveHeaders(), new ObjectMapper());
         collections = new CollectionService(collectionRepository, savedRequestRepository);
-        savedRequests = new SavedRequestService(savedRequestRepository, collectionRepository, sanitizer);
+        savedRequests = new SavedRequestService(
+                savedRequestRepository, collectionRepository, sanitizer, new ObjectMapper());
     }
 
     @Test

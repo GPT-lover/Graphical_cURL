@@ -15,6 +15,7 @@ public record HydraAttackConfigDto(
         String wordlistPath,
         String path,               // e.g. "/login"
         String formParams,         // e.g. "username=^USER^&password=^PASS^"
+        String cookies,            // optional Cookie header value, e.g. "session=abc123; csrftoken=xyz789"
         String failureCondition    // Hydra's F= condition, e.g. "incorrect"
 ) {
 }

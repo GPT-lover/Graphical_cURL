@@ -7,6 +7,8 @@ import java.util.List;
  * the create/update endpoints.
  *
  * <p>No cookies, no credential headers - they were never stored.
+ *
+ * <p>{@code bodyType}/{@code multipart} - see {@link SaveRequestDto}.
  */
 public record SavedRequestDto(
         Long id,
@@ -17,6 +19,8 @@ public record SavedRequestDto(
         List<HeaderDto> headers,
         String body,
         String createdAt,
-        String updatedAt
+        String updatedAt,
+        String bodyType,
+        List<MultipartFieldDto> multipart
 ) {
 }

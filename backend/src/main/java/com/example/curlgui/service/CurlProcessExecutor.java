@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 
 /**
  * Executes one HTTP request by running the real {@code curl} executable via
@@ -83,6 +84,16 @@ public class CurlProcessExecutor {
      * Run the request. Adds any advisory messages (cookie conflicts, TLS-verify
      * disabled) to {@code warnings}.
      *
+     * @param bodyType {@code "raw"}/{@code null} (default - {@code body} is text,
+     *                 written to a temp file), {@code "multipart"} ({@code body}
+     *                 is ignored, {@code multipart} fields are sent via curl's own
+     *                 {@code -F}), or {@code "binary"} ({@code body} is itself the
+     *                 absolute path of the local file to stream - the caller must
+     *                 already have validated it exists; this method never writes
+     *                 the request body to a temp copy in that mode).
+     * @param multipart multipart fields when {@code bodyType} is {@code
+     *                 "multipart"}; ignored otherwise. Every file field's path
+     *                 must already have been validated by the caller.
      * @throws RequestExecutionException for every failure to <em>perform</em> the
      *         request: curl missing, curl failed to start, timeout, or a non-zero
      *         curl exit. A completed HTTP response - including 4xx / 5xx / 429 -
@@ -90,17 +101,24 @@ public class CurlProcessExecutor {
      */
     public Result execute(String method, URI uri, String body,
                           List<HeaderDto> headers, List<CookieDto> cookies,
-                          CurlOptionsDto options, List<String> warnings) {
+                          CurlOptionsDto options, List<String> warnings,
+                          String bodyType, List<MultipartFieldDto> multipart) {
 
         ensureCurlAvailable();
 
         CurlOptionsDto opt = CurlOptionsDto.orNone(options);
+        boolean isMultipart = "multipart".equalsIgnoreCase(bodyType) && multipart != null && !multipart.isEmpty();
+        boolean isBinary = "binary".equalsIgnoreCase(bodyType) && !isMultipart;
 
         String manualCookieHeader = CookieHeader.extractManualCookieHeader(headers);
         CookieHeader.Result cookieResult = CookieHeader.resolve(cookies, manualCookieHeader);
         warnings.addAll(cookieResult.warnings());
         if (opt.insecure()) {
             warnings.add("TLS certificate verification was disabled for this request (-k).");
+        }
+        if (isMultipart && hasHeaderNamed(headers, "Content-Type")) {
+            warnings.add("Ignored a manually-set Content-Type header for this multipart/form-data "
+                    + "request; curl sets its own boundary.");
         }
 
         Path dir;
@@ -120,7 +138,11 @@ public class CurlProcessExecutor {
 
         try {
             String dataFileArg = null;
-            if (body != null && !body.isEmpty()) {
+            if (isBinary) {
+                // The user's own file, streamed directly - never copied into a
+                // temp file (no point doubling a potentially large upload).
+                dataFileArg = body;
+            } else if (!isMultipart && body != null && !body.isEmpty()) {
                 dataFile = dir.resolve("data");
                 Files.write(dataFile, body.getBytes(StandardCharsets.UTF_8));
                 dataFile.toFile().deleteOnExit();
@@ -129,7 +151,8 @@ public class CurlProcessExecutor {
 
             List<String> argv = CurlCommandBuilder.build(
                     binary(), method, uri.toString(), headers, cookieResult.value(),
-                    dataFileArg, headerDump.toString(), bodyOut.toString(), opt,
+                    dataFileArg, isMultipart ? multipart : null,
+                    headerDump.toString(), bodyOut.toString(), opt,
                     DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_MAX_TIME_SECONDS);
 
             long approxLen = 0;
@@ -143,11 +166,13 @@ public class CurlProcessExecutor {
             }
 
             int effectiveMaxTime = positiveOr(opt.maxTimeSeconds(), DEFAULT_MAX_TIME_SECONDS);
-            long bodyBytesCount = dataFile == null ? 0 : Files.size(dataFile);
-            log.info("curl {} -> host \"{}\" ({} header row(s), body={} bytes, cookies={})",
+            long bodyBytesCount = dataFileArg == null ? 0 : fileSizeQuietly(Path.of(dataFileArg));
+            log.info("curl {} -> host \"{}\" ({} header row(s), bodyType={}, body={} bytes, "
+                            + "multipartFields={}, cookies={})",
                     method, uri.getHost(),
                     headers == null ? 0 : headers.size(),
-                    bodyBytesCount, cookieResult.value() != null);
+                    isMultipart ? "multipart" : (isBinary ? "binary" : "raw"), bodyBytesCount,
+                    isMultipart ? multipart.size() : 0, cookieResult.value() != null);
 
             ProcessBuilder pb = new ProcessBuilder(argv);
             pb.redirectOutput(stdoutFile.toFile());
@@ -438,6 +463,27 @@ public class CurlProcessExecutor {
 
     private static int positiveOr(Integer value, int fallback) {
         return (value != null && value > 0) ? value : fallback;
+    }
+
+    private static boolean hasHeaderNamed(List<HeaderDto> headers, String name) {
+        if (headers == null) {
+            return false;
+        }
+        for (HeaderDto h : headers) {
+            if (h != null && h.key() != null && h.key().trim().equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Logging-only: never let a size lookup (e.g. a file that vanished mid-request) fail the request. */
+    private static long fileSizeQuietly(Path p) {
+        try {
+            return Files.size(p);
+        } catch (IOException ex) {
+            return 0;
+        }
     }
 
     private static double parseDoubleSafe(String s) {

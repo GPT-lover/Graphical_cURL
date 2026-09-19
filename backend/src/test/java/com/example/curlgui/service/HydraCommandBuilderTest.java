@@ -17,11 +17,18 @@ import com.example.curlgui.dto.HydraAttackConfigDto;
  */
 class HydraCommandBuilderTest {
 
+    /** No cookies - existing call sites are unaffected by the new field. */
     private static HydraAttackConfigDto config(String host, Integer port, String protocol,
                                                String username, String wordlist, String path,
                                                String formParams, String failureCondition) {
+        return config(host, port, protocol, username, wordlist, path, formParams, null, failureCondition);
+    }
+
+    private static HydraAttackConfigDto config(String host, Integer port, String protocol,
+                                               String username, String wordlist, String path,
+                                               String formParams, String cookies, String failureCondition) {
         return new HydraAttackConfigDto(
-                host, port, protocol, username, wordlist, path, formParams, failureCondition);
+                host, port, protocol, username, wordlist, path, formParams, cookies, failureCondition);
     }
 
     private static HydraAttackConfigDto validConfig() {
@@ -122,6 +129,63 @@ class HydraCommandBuilderTest {
     @Test
     void rejectsNullConfig() {
         assertThrows(InvalidRequestException.class, () -> HydraCommandBuilder.build("hydra", null));
+    }
+
+    // ---- Cookies (optional) ---------------------------------------------
+
+    @Test
+    void noCookiesProducesExactlyThePreviousModuleString() {
+        // Backward compatibility: omitting cookies must not change the argv at all.
+        HydraAttackConfigDto cfg = config("10.82.166.33", 80, "http", "admin", "/path/to/wordlist",
+                "/", "username=^USER^&password=^PASS^", null, "incorrect");
+        List<String> argv = HydraCommandBuilder.build("/usr/bin/hydra", cfg);
+
+        assertEquals(List.of(
+                "/usr/bin/hydra",
+                "-l", "admin",
+                "-P", "/path/to/wordlist",
+                "-s", "80",
+                "10.82.166.33",
+                "http-post-form",
+                "/:username=^USER^&password=^PASS^:F=incorrect",
+                "-V"
+        ), argv);
+    }
+
+    @Test
+    void blankCookiesAlsoProducesThePreviousModuleString() {
+        HydraAttackConfigDto cfg = config("host", 80, "http", "admin", "/wl",
+                "/", "user=^USER^&pass=^PASS^", "   ", "bad");
+        List<String> argv = HydraCommandBuilder.build("hydra", cfg);
+        assertEquals("/:user=^USER^&pass=^PASS^:F=bad", argv.get(argv.indexOf("http-post-form") + 1));
+    }
+
+    @Test
+    void cookiesAreSentAsAnEscapedHeaderBeforeTheFailureCondition() {
+        HydraAttackConfigDto cfg = config("10.82.166.33", 80, "http", "admin", "/path/to/wordlist",
+                "/", "username=^USER^&password=^PASS^", "session=abc123; csrftoken=xyz789", "incorrect");
+        List<String> argv = HydraCommandBuilder.build("/usr/bin/hydra", cfg);
+
+        String moduleString = argv.get(argv.indexOf("http-post-form") + 1);
+        assertEquals(
+                "/:username=^USER^&password=^PASS^:H=Cookie\\: session=abc123; csrftoken=xyz789:F=incorrect",
+                moduleString);
+    }
+
+    @Test
+    void cookiesAreTrimmed() {
+        HydraAttackConfigDto cfg = config("host", 80, "http", "admin", "/wl",
+                "/", "u=^USER^&p=^PASS^", "  session=abc123  ", "bad");
+        List<String> argv = HydraCommandBuilder.build("hydra", cfg);
+        assertEquals("/:u=^USER^&p=^PASS^:H=Cookie\\: session=abc123:F=bad",
+                argv.get(argv.indexOf("http-post-form") + 1));
+    }
+
+    @Test
+    void rejectsColonInCookies() {
+        HydraAttackConfigDto cfg = config("host", 80, "http", "admin", "/wl",
+                "/", "u=^USER^&p=^PASS^", "session=abc:123", "bad");
+        assertThrows(InvalidRequestException.class, () -> HydraCommandBuilder.build("hydra", cfg));
     }
 
     // ---- WSL invocation prefix -----------------------------------------

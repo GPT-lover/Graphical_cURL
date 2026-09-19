@@ -1,6 +1,7 @@
 package com.example.curlgui.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.ParsedRequestDto;
 
 /**
@@ -205,10 +207,12 @@ class CurlParserServiceTest {
     }
 
     @Test
-    void unsupportedFormOptionFails() {
+    void uploadFileOptionIsStillUnsupported() {
+        // -T/--upload-file is a different mechanism (implicit PUT of a whole
+        // file) and is out of scope; -F/--form are handled below.
         CurlParseException ex = assertThrows(CurlParseException.class,
-                () -> parser.parse("curl 'https://e.com' -F 'file=@photo.png'"));
-        assertTrue(ex.getMessage().contains("-F"));
+                () -> parser.parse("curl -T photo.png 'https://e.com'"));
+        assertTrue(ex.getMessage().contains("-T"));
     }
 
     @Test
@@ -368,5 +372,189 @@ class CurlParserServiceTest {
         assertEquals("https://api.example.com/auth/releases/test123/rate", r.url());
         assertEquals("{\"rating\":7}", r.body());
         assertEquals(2, r.cookies().size());
+    }
+
+    // ---- Multipart (-F / --form) import ------------------------------
+
+    /** Spec test 1: {@code -F 'image=@photo.jpg'}. */
+    @Test
+    void multipart1_dashFFileField() {
+        ParsedRequestDto r = parser.parse("curl 'https://example.com/upload' -F 'image=@photo.jpg'");
+        assertEquals("POST", r.method());
+        assertEquals("multipart", r.bodyType());
+        assertEquals(List.of(new MultipartFieldDto("file", "image", "photo.jpg", null)), r.multipart());
+        assertEquals("", r.body());
+    }
+
+    /** Spec test 2: {@code --form 'image=@photo.jpg'}. */
+    @Test
+    void multipart2_longFormFileField() {
+        ParsedRequestDto r = parser.parse("curl 'https://example.com/upload' --form 'image=@photo.jpg'");
+        assertEquals("multipart", r.bodyType());
+        assertEquals(List.of(new MultipartFieldDto("file", "image", "photo.jpg", null)), r.multipart());
+    }
+
+    /** Spec test 3: a plain multipart text field. */
+    @Test
+    void multipart3_textField() {
+        ParsedRequestDto r = parser.parse("curl 'https://example.com/upload' -F 'description=test'");
+        assertEquals("multipart", r.bodyType());
+        assertEquals(List.of(new MultipartFieldDto("text", "description", "test", null)), r.multipart());
+    }
+
+    /** Spec test 4: multiple files. */
+    @Test
+    void multipart4_multipleFiles() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com/upload' -F 'front=@front.jpg' -F 'back=@back.jpg'");
+        assertEquals(List.of(
+                new MultipartFieldDto("file", "front", "front.jpg", null),
+                new MultipartFieldDto("file", "back", "back.jpg", null)), r.multipart());
+    }
+
+    /** Spec test 5: a file field plus a text field, exactly the task's own example. */
+    @Test
+    void multipart5_fileAndTextFields() {
+        ParsedRequestDto r = parser.parse(String.join(" ",
+                "curl 'https://example.com/api/upload'",
+                "-H 'Authorization: Bearer TOKEN'",
+                "-F 'image=@\"/path/to/image.jpg\"'",
+                "-F 'albumId=123'"));
+
+        assertEquals("POST", r.method());
+        assertEquals(new HeaderDto("Authorization", "Bearer TOKEN"), r.headers().get(0));
+        assertEquals("multipart", r.bodyType());
+        assertEquals(List.of(
+                new MultipartFieldDto("file", "image", "/path/to/image.jpg", null),
+                new MultipartFieldDto("text", "albumId", "123", null)), r.multipart());
+    }
+
+    /** Spec test 6: an explicit MIME type. */
+    @Test
+    void multipart6_explicitMimeType() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com/upload' -F 'image=@photo.jpg;type=image/jpeg'");
+        assertEquals(List.of(new MultipartFieldDto("file", "image", "photo.jpg", "image/jpeg")),
+                r.multipart());
+    }
+
+    /** Spec test 7: an unquoted path containing spaces (Chrome/curl allow this - no shell re-splits it). */
+    @Test
+    void multipart7_pathWithSpaces() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com/upload' -F 'image=@my photo.jpg'");
+        assertEquals(List.of(new MultipartFieldDto("file", "image", "my photo.jpg", null)), r.multipart());
+    }
+
+    /** Spec test 8: a quoted path (curl's own quoting, protects embedded ';'). */
+    @Test
+    void multipart8_quotedPath() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com/upload' -F 'image=@\"/path/to/image.jpg\"'");
+        assertEquals(List.of(new MultipartFieldDto("file", "image", "/path/to/image.jpg", null)),
+                r.multipart());
+    }
+
+    /** Spec test 9: existing non-multipart commands are unaffected. */
+    @Test
+    void multipart9_nonMultipartCommandsStillImportAsRaw() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com/api' -H 'content-type: application/json' --data-raw '{\"a\":1}'");
+        assertEquals("raw", r.bodyType());
+        assertEquals("{\"a\":1}", r.body());
+        assertNull(r.multipart());
+    }
+
+    @Test
+    void multipartQuotedPathWithEmbeddedSemicolonAndBackslash() {
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com' -F 'f=@\"C:\\\\a;b.jpg\"'");
+        assertEquals("C:\\a;b.jpg", r.multipart().get(0).value());
+    }
+
+    @Test
+    void formStringFieldIsAlwaysText() {
+        // --form-string never treats a leading '@' as a file - exactly its point.
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com' --form-string 'handle=@alex'");
+        assertEquals(List.of(new MultipartFieldDto("text", "handle", "@alex", null)), r.multipart());
+    }
+
+    @Test
+    void multipartWindowsBackslashPathUnquotedIsUntouched() {
+        // Unquoted -F file paths are read as-is (up to ';'/',') - backslashes are
+        // never interpreted, so a normal single-backslash Windows path round-trips.
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com' -F 'image=@C:\\Users\\Alex\\photo.jpg'");
+        assertEquals("C:\\Users\\Alex\\photo.jpg", r.multipart().get(0).value());
+    }
+
+    @Test
+    void dataBinaryWithAtFileBecomesBinaryBodyType() {
+        String cmd = "curl -X PUT -H 'Content-Type: image/jpeg' --data-binary '@/path/to/image.jpg' "
+                + "'https://example.com/image.jpg'";
+        ParsedRequestDto r = parser.parse(cmd);
+        assertEquals("PUT", r.method());
+        assertEquals("binary", r.bodyType());
+        assertEquals("/path/to/image.jpg", r.body());
+        assertEquals(new HeaderDto("Content-Type", "image/jpeg"), r.headers().get(0));
+    }
+
+    @Test
+    void dataBinaryWithoutAtIsStillLiteralText() {
+        ParsedRequestDto r = parser.parse("curl 'https://e.com' --data-binary 'a=1'");
+        assertEquals("raw", r.bodyType());
+        assertEquals("a=1", r.body());
+    }
+
+    // ---- Raw-body round-trip fidelity --------------------------------------
+    //
+    // The parser never decodes a raw (application/x-www-form-urlencoded or
+    // multipart/form-data) body into key/value pairs - it stays one opaque
+    // string all the way to curl. These tests pin that down: percent-encoding,
+    // duplicate keys, empty values, a field literally named "0", and - the
+    // one that actually matters for a multipart body copied from Chrome
+    // DevTools - real CRLF bytes must all survive completely untouched.
+
+    @Test
+    void rawBodyPreservesUrlEncodingByteForByte() {
+        // @ / + %20 %2F %40 %5B %5D %22 %24 underscores, an empty value, and a
+        // duplicate key - none of it is a key/value pair to this parser, just
+        // characters in a string.
+        String body = "_1_email=user%40example.com&_1_password=p%2Bassw0rd"
+                + "&_1_cf-turnstile-response=&_1_next=%2F&_1_captchaToken="
+                + "&foo=a&foo=b&0=%5B%22%24K1%22%5D";
+        ParsedRequestDto r = parser.parse(
+                "curl 'https://example.com/action' -H 'content-type: application/x-www-form-urlencoded' "
+                        + "--data-raw '" + body + "'");
+        assertEquals("raw", r.bodyType());
+        assertEquals(body, r.body());
+    }
+
+    @Test
+    void rawBodyPreservesLiteralCrlfFromAnsiCQuoting() {
+        // Chrome's "Copy as cURL (bash)" renders a multipart/form-data body's
+        // significant \r\n boundary delimiters (RFC 2046) as literal \r\n
+        // escapes inside a $'...' ANSI-C-quoted --data-raw argument. The
+        // parser must hand back real CR LF bytes, not the two-character
+        // sequence backslash-r backslash-n, and not bare LF either - a
+        // <textarea> silently doing that last part client-side is the actual
+        // bug this class of test protects (see request.test.js in the
+        // frontend for the regression test that covers the editor's fix).
+        String cmd = "curl 'https://example.com/action' "
+                + "-H 'content-type: multipart/form-data; boundary=----WebKitFormBoundaryXXXX' "
+                + "--data-raw $'------WebKitFormBoundaryXXXX\\r\\n"
+                + "Content-Disposition: form-data; name=\"_1_email\"\\r\\n\\r\\n"
+                + "user@example.com\\r\\n"
+                + "------WebKitFormBoundaryXXXX--\\r\\n'";
+        ParsedRequestDto r = parser.parse(cmd);
+
+        String expected = "------WebKitFormBoundaryXXXX\r\n"
+                + "Content-Disposition: form-data; name=\"_1_email\"\r\n\r\n"
+                + "user@example.com\r\n"
+                + "------WebKitFormBoundaryXXXX--\r\n";
+        assertEquals("raw", r.bodyType());
+        assertEquals(expected, r.body());
+        assertTrue(r.body().contains("\r\n"), "boundary lines must keep their CRLF delimiters");
     }
 }

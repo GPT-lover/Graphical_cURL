@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 
 /**
  * Pure tests for the curl argument-list builder. No process is spawned - these
@@ -23,8 +24,14 @@ class CurlCommandBuilderTest {
 
     private List<String> build(String method, String url, List<HeaderDto> headers,
                                String cookie, String dataFile, CurlOptionsDto opt) {
-        return CurlCommandBuilder.build("curl.exe", method, url, headers, cookie, dataFile,
+        return CurlCommandBuilder.build("curl.exe", method, url, headers, cookie, dataFile, null,
                 "H:/tmp/headers", "H:/tmp/body", opt, CT, MT);
+    }
+
+    private List<String> buildMultipart(String method, String url, List<HeaderDto> headers,
+                                        List<MultipartFieldDto> multipart) {
+        return CurlCommandBuilder.build("curl.exe", method, url, headers, null, null, multipart,
+                "H:/tmp/headers", "H:/tmp/body", CurlOptionsDto.none(), CT, MT);
     }
 
     /** The value that follows a given flag in an argv list (first occurrence). */
@@ -151,5 +158,84 @@ class CurlCommandBuilderTest {
                 "real=1", null, CurlOptionsDto.none());
         assertFalse(argv.contains("Cookie: should-not-appear"));
         assertTrue(argv.contains("Cookie: real=1"));
+    }
+
+    // ---- Multipart / binary body ------------------------------------
+
+    @Test
+    void multipartFileFieldUsesFormFlagWithUnquotedPath() {
+        List<String> argv = buildMultipart("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("file", "image", "C:\\Users\\Alex\\photo.jpg", null)));
+
+        // Unquoted, untouched: ProcessBuilder already delivers this argv entry
+        // to curl.exe intact (spaces and backslashes included). Quoting it
+        // ourselves would collide with Windows' own command-line re-escaping
+        // of an argument containing a space or '"' - confirmed by hand to
+        // silently corrupt the path - see MultipartFormValue's class docs.
+        assertTrue(hasPair(argv, "-F", "image=@C:\\Users\\Alex\\photo.jpg"));
+        assertFalse(argv.contains("--data-binary"), "multipart must not also send --data-binary");
+    }
+
+    @Test
+    void multipartFileFieldWithExplicitContentType() {
+        List<String> argv = buildMultipart("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("file", "image", "photo.jpg", "image/jpeg")));
+
+        assertTrue(hasPair(argv, "-F", "image=@photo.jpg;type=image/jpeg"));
+    }
+
+    @Test
+    void multipartTextFieldUsesFormStringNotForm() {
+        List<String> argv = buildMultipart("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("text", "albumId", "123", null)));
+
+        assertTrue(hasPair(argv, "--form-string", "albumId=123"));
+        assertFalse(argv.contains("-F"), "a plain text field must never go through -F");
+    }
+
+    @Test
+    void multipartTextValueStartingWithAtIsSentLiterallyViaFormString() {
+        // A text field whose value happens to start with '@' must never be
+        // misread by curl as "read this from a file" - --form-string guarantees
+        // that, unlike -F.
+        List<String> argv = buildMultipart("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("text", "handle", "@alex", null)));
+        assertTrue(hasPair(argv, "--form-string", "handle=@alex"));
+    }
+
+    @Test
+    void multipartFileAndTextFieldsBothSentInOrder() {
+        List<String> argv = buildMultipart("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("file", "image", "photo.jpg", null),
+                        new MultipartFieldDto("text", "albumId", "123", null)));
+
+        int fIndex = argv.indexOf("-F");
+        int formStringIndex = argv.indexOf("--form-string");
+        assertTrue(fIndex >= 0 && formStringIndex > fIndex, "fields kept in order");
+    }
+
+    @Test
+    void multipartRequestDropsAManuallySetContentTypeHeader() {
+        // curl must own Content-Type for a multipart request (it embeds the
+        // boundary it generates) - a manually typed header must not collide.
+        List<String> argv = buildMultipart("POST", "https://example.com/upload",
+                List.of(new HeaderDto("Content-Type", "multipart/form-data; boundary=bogus"),
+                        new HeaderDto("Accept", "application/json")),
+                List.of(new MultipartFieldDto("text", "a", "1", null)));
+
+        assertFalse(argv.stream().anyMatch(s -> s.startsWith("Content-Type:")));
+        assertTrue(argv.contains("Accept: application/json"));
+    }
+
+    @Test
+    void binaryBodyStreamsTheGivenFileDirectlyViaDataBinary() {
+        // "Binary File" body type: dataFilePath IS the user's real file (no temp
+        // copy involved at this layer - CurlProcessExecutor decides that).
+        List<String> argv = build("PUT", "https://example.com/image.jpg",
+                List.of(new HeaderDto("Content-Type", "image/jpeg")),
+                null, "C:\\Users\\Alex\\photo.jpg", CurlOptionsDto.none());
+
+        assertTrue(hasPair(argv, "--data-binary", "@C:\\Users\\Alex\\photo.jpg"));
+        assertTrue(argv.contains("Content-Type: image/jpeg"), "binary mode does not touch Content-Type");
     }
 }

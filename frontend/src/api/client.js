@@ -378,8 +378,10 @@ export function detectHydra(settings) {
 /**
  * POST /api/hydra/attacks - start an http-post-form / https-post-form attack.
  * `payload` = { host, port, protocol, username, wordlistPath, path, formParams,
- * failureCondition }. Returns { attackId }. 409 if an attack is already
- * running; 400 for an unconfigured/missing executable or invalid config.
+ * cookies, failureCondition }. `cookies` is optional (empty/omitted -> no
+ * Cookie header is sent) - paste the Cookie header value as-is, e.g.
+ * "session=abc123; csrftoken=xyz789". Returns { attackId }. 409 if an attack
+ * is already running; 400 for an unconfigured/missing executable or invalid config.
  */
 export function startHydraAttack(payload) {
   return postJson('/api/hydra/attacks', payload)

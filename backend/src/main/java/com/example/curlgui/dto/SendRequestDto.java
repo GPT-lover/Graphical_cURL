@@ -27,6 +27,14 @@ import java.util.List;
  * variables to substitute into {@code {{PLACEHOLDERS}}} before sending. The
  * frontend sends its currently active environment id here. Substitution happens
  * on a copy - this DTO (and therefore Request History) keeps the placeholders.
+ *
+ * <p>{@code bodyType} selects how the body is sent: {@code "raw"} (default when
+ * {@code null} - {@code body} is sent verbatim, unchanged from before multipart
+ * support), {@code "multipart"} ({@code multipart} fields are sent as a real
+ * {@code multipart/form-data} request built by curl itself - {@code body} is
+ * ignored), or {@code "binary"} ({@code body} holds the absolute path to a local
+ * file whose bytes are streamed as the request body via curl's
+ * {@code --data-binary @file}, never read into this DTO).
  */
 public record SendRequestDto(
         String method,
@@ -35,16 +43,33 @@ public record SendRequestDto(
         List<CookieDto> cookies,
         String body,
         Long environmentId,
-        CurlOptionsDto curlOptions
+        CurlOptionsDto curlOptions,
+        String bodyType,
+        List<MultipartFieldDto> multipart
 ) {
     /**
-     * Compact form without {@code curlOptions} (defaults to {@code null}). Keeps
-     * every existing call-site and test that predates transport options working
-     * unchanged; the frontend supplies {@code curlOptions} in the JSON when an
-     * imported request carried transport flags.
+     * Compact form without {@code curlOptions}/{@code bodyType}/{@code multipart}
+     * (all default to {@code null}, i.e. a plain raw-body request). Keeps every
+     * existing call-site and test that predates transport options / multipart
+     * working unchanged.
      */
     public SendRequestDto(String method, String url, List<HeaderDto> headers,
                           List<CookieDto> cookies, String body, Long environmentId) {
-        this(method, url, headers, cookies, body, environmentId, null);
+        this(method, url, headers, cookies, body, environmentId, null, null, null);
+    }
+
+    /** Compact form without {@code bodyType}/{@code multipart} (defaults to raw). */
+    public SendRequestDto(String method, String url, List<HeaderDto> headers,
+                          List<CookieDto> cookies, String body, Long environmentId,
+                          CurlOptionsDto curlOptions) {
+        this(method, url, headers, cookies, body, environmentId, curlOptions, null, null);
+    }
+
+    public boolean isMultipart() {
+        return "multipart".equalsIgnoreCase(bodyType) && multipart != null && !multipart.isEmpty();
+    }
+
+    public boolean isBinary() {
+        return "binary".equalsIgnoreCase(bodyType);
     }
 }

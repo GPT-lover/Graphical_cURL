@@ -1,5 +1,11 @@
-import { useCallback, useState } from 'react'
-import { createInitialRequest, makeCookie, makeHeader } from '../lib/request.js'
+import { useCallback, useRef, useState } from 'react'
+import {
+  createInitialRequest,
+  makeCookie,
+  makeHeader,
+  makeMultipartField,
+  reconcileBodyEdit,
+} from '../lib/request.js'
 
 /**
  * Holds the entire request-being-edited in one piece of React state and returns
@@ -19,6 +25,14 @@ import { createInitialRequest, makeCookie, makeHeader } from '../lib/request.js'
 export function useRequest() {
   const [request, setRequest] = useState(createInitialRequest)
 
+  // The Raw body exactly as it was last loaded (cURL import / saved request /
+  // history), before any edit in this editor session. setBody compares
+  // against it so a <textarea>'s silent CRLF-to-LF rewrite (see
+  // reconcileBodyEdit in lib/request.js) can't corrupt a byte-exact body the
+  // user never actually changed. Not request state: it must not itself be
+  // rewritten by the normalisation it exists to guard against.
+  const pristineBodyRef = useRef(null)
+
   const setMethod = useCallback((method) => {
     setRequest((prev) => ({ ...prev, method }))
   }, [])
@@ -28,7 +42,45 @@ export function useRequest() {
   }, [])
 
   const setBody = useCallback((body) => {
-    setRequest((prev) => ({ ...prev, body }))
+    setRequest((prev) => ({ ...prev, body: reconcileBodyEdit(pristineBodyRef.current, body) }))
+  }, [])
+
+  const setBodyType = useCallback((bodyType) => {
+    setRequest((prev) => ({
+      ...prev,
+      bodyType,
+      // Starting a multipart body with no fields yet is a confusing empty
+      // state - seed one blank text row, same as Headers/Cookies do.
+      multipart:
+        bodyType === 'multipart' && (prev.multipart ?? []).length === 0
+          ? [makeMultipartField()]
+          : prev.multipart,
+    }))
+  }, [])
+
+  // --- Multipart fields (Body Type: Multipart Form) --------------------
+
+  const addMultipartField = useCallback((type = 'text') => {
+    setRequest((prev) => ({
+      ...prev,
+      multipart: [...(prev.multipart ?? []), makeMultipartField(type)],
+    }))
+  }, [])
+
+  const removeMultipartField = useCallback((id) => {
+    setRequest((prev) => ({
+      ...prev,
+      multipart: (prev.multipart ?? []).filter((field) => field.id !== id),
+    }))
+  }, [])
+
+  const updateMultipartField = useCallback((id, changes) => {
+    setRequest((prev) => ({
+      ...prev,
+      multipart: (prev.multipart ?? []).map((field) =>
+        field.id === id ? { ...field, ...changes } : field,
+      ),
+    }))
   }, [])
 
   // --- Headers --------------------------------------------------------
@@ -92,6 +144,9 @@ export function useRequest() {
    * Missing lists fall back to a single blank row so the editor stays usable.
    */
   const loadRequest = useCallback((incoming) => {
+    const bodyType = incoming.bodyType ?? 'raw'
+    // New byte-exact baseline for this freshly-loaded body (see setBody).
+    pristineBodyRef.current = incoming.body ?? ''
     setRequest({
       method: incoming.method ?? 'GET',
       url: incoming.url ?? '',
@@ -104,6 +159,15 @@ export function useRequest() {
           ? incoming.cookies.map((cookie) => makeCookie(cookie.key, cookie.value))
           : [makeCookie()],
       body: incoming.body ?? '',
+      bodyType,
+      multipart:
+        incoming.multipart && incoming.multipart.length > 0
+          ? incoming.multipart.map((field) =>
+              makeMultipartField(field.type, field.name, field.value, field.contentType ?? ''),
+            )
+          : bodyType === 'multipart'
+            ? [makeMultipartField()]
+            : [],
       // cURL import supplies curlOptions (--compressed, --http1.1, -L, -k,
       // timeouts, --proxy); History / Saved Requests do not, so it resets to
       // null there. Carried opaquely; no editor UI.
@@ -112,6 +176,7 @@ export function useRequest() {
   }, [])
 
   const resetRequest = useCallback(() => {
+    pristineBodyRef.current = null
     setRequest(createInitialRequest())
   }, [])
 
@@ -120,6 +185,10 @@ export function useRequest() {
     setMethod,
     setUrl,
     setBody,
+    setBodyType,
+    addMultipartField,
+    removeMultipartField,
+    updateMultipartField,
     addHeader,
     removeHeader,
     updateHeader,

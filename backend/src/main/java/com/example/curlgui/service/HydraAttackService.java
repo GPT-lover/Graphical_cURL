@@ -254,7 +254,7 @@ public class HydraAttackService {
 
     private static HydraAttackConfigDto withWordlistPath(HydraAttackConfigDto config, String wordlistPath) {
         return new HydraAttackConfigDto(config.host(), config.port(), config.protocol(), config.username(),
-                wordlistPath, config.path(), config.formParams(), config.failureCondition());
+                wordlistPath, config.path(), config.formParams(), config.cookies(), config.failureCondition());
     }
 
     /** Runs {@code wslpath -a <windowsPath>} inside {@code distro} and returns the converted absolute WSL path. */

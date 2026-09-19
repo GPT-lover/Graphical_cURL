@@ -735,6 +735,91 @@ code {
   tab-size: 2;
 }
 
+/* ---- Body type tabs (Raw / Multipart Form / Binary File) --------- */
+
+.body-type-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.body-type-tab {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.body-type-tab:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.body-type-tab--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ---- Multipart Form body editor ----------------------------------- */
+
+.multipart-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.multipart-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.multipart-row__type {
+  cursor: pointer;
+}
+
+.multipart-row__mime {
+  max-width: 180px;
+}
+
+.multipart-editor__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.multipart-editor__actions .btn--ghost {
+  margin-top: 0;
+}
+
+/* ---- Local file picker (multipart File fields, Binary File body) -- */
+
+.file-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.file-picker__path {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-picker__missing {
+  font-size: 0.75rem;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
 /* ---- Key/value row lists (Headers, Cookies) ---------------- */
 
 .pairs {

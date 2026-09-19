@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.SendRequestDto;
 
 /**
@@ -48,7 +49,9 @@ public class CurlGeneratorService {
         }
 
         String body = dto.body() == null ? "" : dto.body();
-        boolean hasBody = !body.isEmpty();
+        boolean isMultipart = dto.isMultipart();
+        boolean isBinary = dto.isBinary() && !isMultipart && !body.isEmpty();
+        boolean hasBody = isMultipart || isBinary || !body.isEmpty();
 
         List<String> parts = new ArrayList<>();
         parts.add("curl " + ShellQuote.single(url));
@@ -91,7 +94,9 @@ public class CurlGeneratorService {
 
         // Headers: order, duplicates and capitalisation are preserved exactly.
         // A header literally named "Cookie" (any case) is left out here - cookies
-        // are emitted once as -b below.
+        // are emitted once as -b below. For multipart, a literal "Content-Type"
+        // row is left out too - curl must own that header (it embeds the
+        // boundary it generates).
         List<HeaderDto> headers = dto.headers() == null ? List.of() : dto.headers();
         for (HeaderDto header : headers) {
             if (header == null) {
@@ -99,6 +104,9 @@ public class CurlGeneratorService {
             }
             String name = header.key() == null ? "" : header.key().trim();
             if (name.isEmpty() || name.equalsIgnoreCase("Cookie")) {
+                continue;
+            }
+            if (isMultipart && name.equalsIgnoreCase("Content-Type")) {
                 continue;
             }
             String value = header.value() == null ? "" : header.value();
@@ -114,8 +122,26 @@ public class CurlGeneratorService {
             parts.add("-b " + ShellQuote.single(cookies.value()));
         }
 
-        // Body: verbatim, never reformatted or pretty-printed.
-        if (hasBody) {
+        // Body: verbatim, never reformatted or pretty-printed. Multipart fields
+        // become -F/--form-string (curl builds the boundary itself); a Binary
+        // File body becomes --data-binary '@path' (curl streams the file as-is -
+        // its bytes are never read here, only the path is written out).
+        if (isMultipart) {
+            for (MultipartFieldDto field : dto.multipart()) {
+                if (field == null || field.name() == null || field.name().isBlank()) {
+                    continue;
+                }
+                if (field.isFile()) {
+                    parts.add("-F " + ShellQuote.single(
+                            MultipartFormValue.forGeneratedFile(field.name(), field.value(), field.contentType())));
+                } else {
+                    parts.add("--form-string " + ShellQuote.single(
+                            MultipartFormValue.forText(field.name(), field.value())));
+                }
+            }
+        } else if (isBinary) {
+            parts.add("--data-binary " + ShellQuote.single("@" + body));
+        } else if (hasBody) {
             parts.add("--data-raw " + ShellQuote.single(body));
         }
 

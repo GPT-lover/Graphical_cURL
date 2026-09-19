@@ -58,6 +58,10 @@ export default function RequestEditor({
     setMethod,
     setUrl,
     setBody,
+    setBodyType,
+    addMultipartField,
+    removeMultipartField,
+    updateMultipartField,
     updateHeader,
     addHeader,
     removeHeader,
@@ -160,7 +164,16 @@ export default function RequestEditor({
         onClear={clearCookies}
       />
 
-      <BodyEditor value={request.body} onChange={setBody} />
+      <BodyEditor
+        value={request.body}
+        onChange={setBody}
+        bodyType={request.bodyType}
+        onBodyTypeChange={setBodyType}
+        multipart={request.multipart}
+        onAddMultipartField={addMultipartField}
+        onRemoveMultipartField={removeMultipartField}
+        onUpdateMultipartField={updateMultipartField}
+      />
     </div>
   )
 }

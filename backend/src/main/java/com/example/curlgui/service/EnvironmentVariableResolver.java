@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.SendRequestDto;
 
 /**
@@ -96,11 +97,20 @@ public class EnvironmentVariableResolver {
                 .map(c -> new CookieDto(c.key(), resolve(c.value(), variables, unknown)))
                 .toList();
 
+        // Multipart text field values may use {{variables}} like any other field;
+        // a file field's value is a local path, which can equally reference an
+        // environment variable (e.g. "{{fixturesDir}}/photo.jpg") - resolved the
+        // same way, harmless no-op when the value has no placeholder.
+        List<MultipartFieldDto> multipart = original.multipart() == null ? null : original.multipart().stream()
+                .map(f -> new MultipartFieldDto(f.type(), f.name(),
+                        resolve(f.value(), variables, unknown), f.contentType()))
+                .toList();
+
         if (!unknown.isEmpty()) {
             throw new UnresolvedVariableException(unknown);
         }
 
         return new SendRequestDto(original.method(), url, headers, cookies, body,
-                original.environmentId(), original.curlOptions());
+                original.environmentId(), original.curlOptions(), original.bodyType(), multipart);
     }
 }

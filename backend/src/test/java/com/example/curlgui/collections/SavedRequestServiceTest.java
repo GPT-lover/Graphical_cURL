@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.TestPropertySource;
 
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.SaveRequestDto;
 import com.example.curlgui.dto.SavedRequestDto;
 import com.example.curlgui.repository.CollectionRepository;
@@ -52,7 +53,8 @@ class SavedRequestServiceTest {
         collectionRepository.deleteAll();
         HeaderSanitizer sanitizer = new HeaderSanitizer(new SensitiveHeaders(), new ObjectMapper());
         collections = new CollectionService(collectionRepository, savedRequestRepository);
-        savedRequests = new SavedRequestService(savedRequestRepository, collectionRepository, sanitizer);
+        savedRequests = new SavedRequestService(
+                savedRequestRepository, collectionRepository, sanitizer, new ObjectMapper());
         collectionId = collections.create("Record API").id();
     }
 
@@ -149,5 +151,63 @@ class SavedRequestServiceTest {
         SavedRequestDto moved = savedRequests.update(id, new SaveRequestDto(
                 "Rate Release", other, "POST", "https://example.com/api/rate", List.of(), "{}"));
         assertEquals(other, moved.collectionId());
+    }
+
+    // ---- Multipart / binary persistence ------------------------------
+
+    @Test
+    void multipartFieldsRoundTripThroughSaveAndReload() {
+        List<MultipartFieldDto> fields = List.of(
+                new MultipartFieldDto("file", "image", "C:\\Users\\Alex\\photo.jpg", "image/jpeg"),
+                new MultipartFieldDto("text", "albumId", "123", null));
+
+        SavedRequestDto saved = savedRequests.create(new SaveRequestDto(
+                "Upload photo", collectionId, "POST", "https://example.com/upload",
+                List.of(new HeaderDto("Authorization", "Bearer irrelevant-here")),
+                "", "multipart", fields));
+
+        assertEquals("multipart", saved.bodyType());
+        assertEquals(fields, saved.multipart());
+
+        // re-read from the DB, not just the create() response
+        SavedRequestDto reloaded = savedRequests.get(saved.id());
+        assertEquals("multipart", reloaded.bodyType());
+        assertEquals(fields, reloaded.multipart());
+    }
+
+    @Test
+    void binaryBodyTypeRoundTripsAsAFilePath() {
+        SavedRequestDto saved = savedRequests.create(new SaveRequestDto(
+                "Upload image", collectionId, "PUT", "https://example.com/image.jpg",
+                List.of(new HeaderDto("Content-Type", "image/jpeg")),
+                "C:\\Users\\Alex\\photo.jpg", "binary", null));
+
+        assertEquals("binary", saved.bodyType());
+        assertEquals("C:\\Users\\Alex\\photo.jpg", saved.body());
+        assertEquals("binary", savedRequests.get(saved.id()).bodyType());
+    }
+
+    @Test
+    void plainRawRequestsStillDefaultBodyTypeToNull() {
+        // Requests saved before multipart support (or a plain raw save today)
+        // must not gain a spurious bodyType/multipart value.
+        SavedRequestDto saved = savedRequests.create(dto("Rate Release", "{\"rating\":7}", List.of()));
+        assertEquals(null, saved.bodyType());
+        assertEquals(null, saved.multipart());
+    }
+
+    @Test
+    void updatingFromMultipartBackToRawClearsStoredFields() {
+        List<MultipartFieldDto> fields = List.of(new MultipartFieldDto("text", "a", "1", null));
+        long id = savedRequests.create(new SaveRequestDto(
+                "Req", collectionId, "POST", "https://example.com/upload",
+                List.of(), "", "multipart", fields)).id();
+
+        SavedRequestDto updated = savedRequests.update(id, new SaveRequestDto(
+                "Req", collectionId, "POST", "https://example.com/api", List.of(), "{}"));
+
+        assertEquals(null, updated.bodyType());
+        assertEquals(null, updated.multipart());
+        assertEquals(null, savedRequests.get(id).multipart());
     }
 }

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.SendRequestDto;
 
 /**
@@ -24,6 +25,15 @@ class CurlGeneratorServiceTest {
     private static SendRequestDto req(String method, String url,
                                       List<HeaderDto> headers, List<CookieDto> cookies, String body) {
         return new SendRequestDto(method, url, headers, cookies, body, null);
+    }
+
+    private static SendRequestDto multipartReq(String method, String url, List<HeaderDto> headers,
+                                               List<MultipartFieldDto> multipart) {
+        return new SendRequestDto(method, url, headers, List.of(), "", null, null, "multipart", multipart);
+    }
+
+    private static SendRequestDto binaryReq(String method, String url, List<HeaderDto> headers, String path) {
+        return new SendRequestDto(method, url, headers, List.of(), path, null, null, "binary", null);
     }
 
     private static int countOccurrences(String haystack, String needle) {
@@ -207,5 +217,47 @@ class CurlGeneratorServiceTest {
         assertThrows(InvalidRequestException.class, () -> gen.generate(null));
         assertThrows(InvalidRequestException.class,
                 () -> gen.generate(req("GET", "  ", List.of(), List.of(), "")));
+    }
+
+    // ---- Multipart / binary body ------------------------------------
+
+    @Test
+    void multipartFileFieldGeneratesQuotedFormFlag() {
+        String curl = gen.generate(multipartReq("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("file", "image", "/absolute/path/image.jpg", null))));
+        assertTrue(curl.contains("-F 'image=@\"/absolute/path/image.jpg\"'"));
+    }
+
+    @Test
+    void multipartFileFieldWithContentTypeGeneratesTypeParam() {
+        String curl = gen.generate(multipartReq("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("file", "image", "photo.jpg", "image/jpeg"))));
+        assertTrue(curl.contains("-F 'image=@\"photo.jpg\";type=image/jpeg'"));
+    }
+
+    @Test
+    void multipartTextFieldGeneratesFormString() {
+        String curl = gen.generate(multipartReq("POST", "https://example.com/upload", List.of(),
+                List.of(new MultipartFieldDto("text", "albumId", "123", null))));
+        assertTrue(curl.contains("--form-string 'albumId=123'"));
+        assertFalse(curl.contains("-F 'albumId"));
+    }
+
+    @Test
+    void multipartRequestOmitsDataRawAndManualContentType() {
+        String curl = gen.generate(multipartReq("POST", "https://example.com/upload",
+                List.of(new HeaderDto("Content-Type", "multipart/form-data; boundary=bogus")),
+                List.of(new MultipartFieldDto("text", "a", "1", null))));
+        assertFalse(curl.contains("--data-raw"));
+        assertFalse(curl.contains("Content-Type"));
+    }
+
+    @Test
+    void binaryBodyGeneratesDataBinaryWithAtPath() {
+        String curl = gen.generate(binaryReq("PUT", "https://example.com/image.jpg",
+                List.of(new HeaderDto("Content-Type", "image/jpeg")), "/path/to/image.jpg"));
+        assertTrue(curl.contains("--data-binary '@/path/to/image.jpg'"));
+        assertTrue(curl.contains("-H 'Content-Type: image/jpeg'"));
+        assertFalse(curl.contains("--data-raw"));
     }
 }

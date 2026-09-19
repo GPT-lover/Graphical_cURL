@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import com.example.curlgui.dto.CookieDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.SendRequestDto;
 
 /**
@@ -154,9 +155,14 @@ public class DynamicVariableResolver {
                 .map(c -> new CookieDto(c.key(), resolve(c.value(), iteration)))
                 .toList();
 
+        List<MultipartFieldDto> multipart = original.multipart() == null ? null : original.multipart().stream()
+                .map(f -> new MultipartFieldDto(f.type(), f.name(), resolve(f.value(), iteration), f.contentType()))
+                .toList();
+
         return new SendRequestDto(
                 original.method(), resolve(original.url(), iteration), headers, cookies,
-                resolve(original.body(), iteration), original.environmentId(), original.curlOptions());
+                resolve(original.body(), iteration), original.environmentId(), original.curlOptions(),
+                original.bodyType(), multipart);
     }
 
     /** Validate the captured length argument and produce that many characters. */

@@ -19,6 +19,13 @@ import com.example.curlgui.dto.HydraAttackConfigDto;
  * shell, so the target, credentials and module string cannot be interpreted as
  * shell metacharacters or extra command-line options.
  *
+ * <p>An optional Cookie header ({@link HydraAttackConfigDto#cookies()}) is sent
+ * using the module's {@code H=<Header>\:<value>} custom-header syntax (verified
+ * against {@code hydra -U http-post-form} on the Hydra v9.7 install this app
+ * targets) - e.g. {@code H=Cookie\: session=abc123; csrftoken=xyz789}. Blank/
+ * absent cookies add nothing to the module string, so existing attacks are
+ * unaffected.
+ *
  * <p>{@code invocationPrefix} is how Hydra itself gets invoked: a single
  * element (the executable path) for a local run, or the full
  * {@code wsl.exe -d <distro> --exec <hydraPath>} sequence when Hydra is
@@ -61,12 +68,22 @@ final class HydraCommandBuilder {
             throw new InvalidRequestException(
                     "Form parameters must include the ^USER^ and ^PASS^ placeholders.");
         }
+        String cookies = optionalTrimmed(config.cookies());
         String failureCondition = requireNonBlank(config.failureCondition(), "Failure condition is required.");
         requireNoColon(path, "Path");
         requireNoColon(formParams, "Form parameters");
+        if (cookies != null) {
+            requireNoColon(cookies, "Cookies");
+        }
         requireNoColon(failureCondition, "Failure condition");
 
-        String moduleString = path + ":" + formParams + ":F=" + failureCondition;
+        // Optional fields sit between the form parameters and the F=/S= condition
+        // (Hydra http-post-form module help, "-U http-post-form"): a Cookie header
+        // is sent like any other custom header, via H=<Header>\:<value> - the colon
+        // after the header name must be escaped since ':' is the module's own field
+        // separator. See HydraAttackConfigDto#cookies.
+        String cookieField = (cookies == null) ? "" : ":H=Cookie\\: " + cookies;
+        String moduleString = path + ":" + formParams + cookieField + ":F=" + failureCondition;
 
         List<String> argv = new ArrayList<>(invocationPrefix);
         argv.add("-l");
@@ -102,5 +119,14 @@ final class HydraCommandBuilder {
             throw new InvalidRequestException(
                     fieldName + " must not contain \":\" - it is used as the Hydra module field separator.");
         }
+    }
+
+    /** Unlike {@link #requireNonBlank}, blank/null is allowed here - it just means "not supplied". */
+    private static String optionalTrimmed(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

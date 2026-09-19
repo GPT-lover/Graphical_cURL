@@ -3,6 +3,9 @@ package com.example.curlgui.service;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -14,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.example.curlgui.dto.CurlOptionsDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 import com.example.curlgui.dto.SendRequestDto;
 import com.example.curlgui.dto.SendResponseDto;
 
@@ -126,6 +130,20 @@ public class RequestService {
         String body = resolved.body() == null ? "" : resolved.body();
         CurlOptionsDto options = CurlOptionsDto.orNone(resolved.curlOptions());
 
+        // Validate local files BEFORE curl is touched, so a missing/moved file
+        // (the saved request may be pointing at a path that no longer exists)
+        // fails fast with a clear message instead of silently sending an empty
+        // field or a broken request. Checked against bodyType directly (not the
+        // DTO's isMultipart()/isBinary() convenience methods, which treat an
+        // empty field list as "not multipart") so an explicitly-multipart request
+        // with no fields is rejected rather than silently sent with no body.
+        String bodyType = resolved.bodyType();
+        if ("multipart".equalsIgnoreCase(bodyType)) {
+            validateMultipartFields(resolved.multipart());
+        } else if ("binary".equalsIgnoreCase(bodyType)) {
+            validateLocalFile(body, "the request body file");
+        }
+
         if (logProxyLine) {
             // Log host only - never the full URL (query strings can carry
             // tokens), never headers, never the body.
@@ -134,7 +152,8 @@ public class RequestService {
 
         List<String> warnings = new ArrayList<>();
         CurlProcessExecutor.Result result = curlExecutor.execute(
-                method, uri, body, resolved.headers(), resolved.cookies(), options, warnings);
+                method, uri, body, resolved.headers(), resolved.cookies(), options, warnings,
+                resolved.bodyType(), resolved.multipart());
 
         Charset charset = charsetFromContentType(firstHeader(result.headers(), "content-type"));
         String decodedBody = new String(result.body(), charset);
@@ -188,6 +207,68 @@ public class RequestService {
             throw new InvalidRequestException("URL must include a host, e.g. https://example.com/path");
         }
         return uri;
+    }
+
+    /**
+     * Every field needs a name, curl's {@code -F name=value} syntax can't
+     * represent a name containing {@code '='}, and every file field's local path
+     * must exist and be readable - checked here, before curl is invoked, so a
+     * missing/moved/renamed file (most likely: a saved request whose file moved
+     * since it was saved) fails with one clear message naming the field, instead
+     * of curl failing generically or the field silently going out empty.
+     */
+    private void validateMultipartFields(List<MultipartFieldDto> fields) {
+        if (fields == null || fields.isEmpty()) {
+            throw new InvalidRequestException(
+                    "This multipart/form-data request has no fields; add at least one.");
+        }
+        for (MultipartFieldDto field : fields) {
+            if (field == null || field.name() == null || field.name().isBlank()) {
+                throw new InvalidRequestException("Every multipart field needs a name.");
+            }
+            if (field.name().contains("=")) {
+                throw new InvalidRequestException(
+                        "Multipart field name \"" + field.name() + "\" cannot contain '='.");
+            }
+            if (field.isFile()) {
+                String what = "field \"" + field.name() + "\"";
+                validateLocalFile(field.value(), what);
+                // curl's -F reads an unquoted file path up to the first ';' or
+                // ',' (its own parameter/multi-file separators) - see
+                // MultipartFormValue's class docs for why the execution path
+                // can't safely use curl's quoted-path escape hatch here.
+                if (field.value().indexOf(';') >= 0 || field.value().indexOf(',') >= 0) {
+                    throw new InvalidRequestException(
+                            "The file path for " + what + " contains ';' or ',', which cannot be "
+                                    + "used in a multipart file upload: \"" + field.value() + "\".");
+                }
+            }
+        }
+    }
+
+    /** See {@link #validateMultipartFields}; also used for the "Binary File" body type. */
+    private void validateLocalFile(String path, String what) {
+        if (path == null || path.isBlank()) {
+            throw new InvalidRequestException("Choose a file for " + what + " before sending.");
+        }
+        Path p;
+        try {
+            p = Path.of(path);
+        } catch (InvalidPathException ex) {
+            throw new InvalidRequestException("The file path for " + what + " is not valid: " + path);
+        }
+        if (!Files.exists(p)) {
+            throw new InvalidRequestException(
+                    "The file for " + what + " no longer exists at \"" + path
+                            + "\". Choose a replacement file.");
+        }
+        if (!Files.isRegularFile(p)) {
+            throw new InvalidRequestException("The path for " + what + " is not a file: " + path);
+        }
+        if (!Files.isReadable(p)) {
+            throw new InvalidRequestException(
+                    "The file for " + what + " could not be read (check permissions): " + path);
+        }
     }
 
     // ------------------------------------------------------------------

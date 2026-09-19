@@ -25,8 +25,15 @@ const api = {
   // Open a URL in the user's real browser instead of navigating the app window.
   openExternal: (url) => ipcRenderer.invoke('curl-gui:open-external', String(url)),
   // Native "Browse" file picker (used by the Hydra tool for the executable and
-  // wordlist paths). Resolves to the chosen absolute path, or null if cancelled.
+  // wordlist paths, and by the request editor for multipart/binary file
+  // fields). Resolves to the chosen absolute path, or null if cancelled.
   pickFile: (options) => ipcRenderer.invoke('curl-gui:pick-file', options || {}),
+  // Best-effort local existence check for a multipart/binary file field, so a
+  // moved/deleted file can be flagged in the editor before Send is even
+  // pressed. Resolves to false in a plain browser (no window.curlGui) or on
+  // any error - callers must not treat that as proof the file is missing,
+  // only as "can't tell locally"; the backend always re-validates on Send.
+  pathExists: (path) => ipcRenderer.invoke('curl-gui:path-exists', String(path || '')),
 }
 
 contextBridge.exposeInMainWorld('curlGui', api)

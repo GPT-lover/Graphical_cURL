@@ -156,6 +156,8 @@ export default function App() {
         url: step.url.trim(),
         headers: step.headers ?? [],
         body: step.body ?? '',
+        bodyType: step.bodyType ?? null,
+        multipart: step.multipart ?? null,
         environmentId: environments.activeEnvironmentId ?? null,
       })),
       loops,
@@ -193,10 +195,13 @@ export default function App() {
 
   // --- helpers ------------------------------------------------------
 
-  /** { method, url, headers, body } from the editor - no cookies (never saved). */
+  /**
+   * { method, url, headers, body, bodyType, multipart } from the editor - no
+   * cookies (never saved).
+   */
   function editorRequestFields() {
-    const { method, url, headers, body } = toRequestPayload(request)
-    return { method, url, headers, body }
+    const { method, url, headers, body, bodyType, multipart } = toRequestPayload(request)
+    return { method, url, headers, body, bodyType, multipart }
   }
 
   function reportError(err) {
@@ -319,6 +324,8 @@ export default function App() {
           url: full.url,
           headers: full.headers,
           body: full.body,
+          bodyType: full.bodyType,
+          multipart: full.multipart,
         })
         if (saved && saved.id === id) setSaved({ ...saved, name })
         collections.refresh()

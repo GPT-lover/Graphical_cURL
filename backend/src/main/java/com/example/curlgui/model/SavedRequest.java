@@ -41,6 +41,16 @@ public class SavedRequest {
     @Column(length = 1_048_576)
     private String body;
 
+    /**
+     * {@code "raw"} (or {@code null}, for rows saved before multipart support) |
+     * {@code "multipart"} | {@code "binary"}. See {@code SaveRequestDto}.
+     */
+    private String bodyType;
+
+    /** Multipart fields as a JSON array string (empty/null when bodyType isn't "multipart"). */
+    @Column(length = 1_048_576)
+    private String multipartFields;
+
     private String createdAt;
     private String updatedAt;
 
@@ -98,6 +108,22 @@ public class SavedRequest {
 
     public void setBody(String body) {
         this.body = body;
+    }
+
+    public String getBodyType() {
+        return bodyType;
+    }
+
+    public void setBodyType(String bodyType) {
+        this.bodyType = bodyType;
+    }
+
+    public String getMultipartFields() {
+        return multipartFields;
+    }
+
+    public void setMultipartFields(String multipartFields) {
+        this.multipartFields = multipartFields;
     }
 
     public String getCreatedAt() {

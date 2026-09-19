@@ -6,6 +6,7 @@ import java.util.Locale;
 
 import com.example.curlgui.dto.CurlOptionsDto;
 import com.example.curlgui.dto.HeaderDto;
+import com.example.curlgui.dto.MultipartFieldDto;
 
 /**
  * Builds the {@code curl} argument list for one request. Pure: no I/O, no
@@ -42,7 +43,14 @@ final class CurlCommandBuilder {
      * @param url              validated absolute http/https URL
      * @param headers          editor headers, in order (a row named "Cookie" is skipped)
      * @param cookieHeaderValue the single combined {@code Cookie} value, or null
-     * @param dataFilePath     path to a temp file holding the request body, or null for no body
+     * @param dataFilePath     path to a temp file holding the request body (raw
+     *                         text mode), or - in binary mode - the user's real
+     *                         local file read and streamed as-is; null for no body
+     * @param multipart        multipart/form-data fields to send via curl's own
+     *                         {@code -F}/{@code --form-string} (curl builds the
+     *                         boundary, {@code Content-Length} and encoding - see
+     *                         class docs); null/empty for a non-multipart request.
+     *                         Mutually exclusive with {@code dataFilePath}.
      * @param headerDumpPath   where curl should write response headers
      * @param bodyOutputPath   where curl should write the response body
      * @param options          transport options (never null - use {@link CurlOptionsDto#orNone})
@@ -55,6 +63,7 @@ final class CurlCommandBuilder {
                               List<HeaderDto> headers,
                               String cookieHeaderValue,
                               String dataFilePath,
+                              List<MultipartFieldDto> multipart,
                               String headerDumpPath,
                               String bodyOutputPath,
                               CurlOptionsDto options,
@@ -63,6 +72,7 @@ final class CurlCommandBuilder {
 
         CurlOptionsDto opt = CurlOptionsDto.orNone(options);
         boolean isHead = "HEAD".equals(method);
+        boolean hasMultipart = multipart != null && !multipart.isEmpty();
         List<String> a = new ArrayList<>();
 
         a.add(curlBinary);
@@ -122,7 +132,9 @@ final class CurlCommandBuilder {
         }
 
         // Headers, in editor order. A literal "Cookie" row is emitted once below
-        // from the combined value instead.
+        // from the combined value instead. A literal "Content-Type" row is
+        // dropped for multipart requests: curl must own that header (it embeds
+        // the boundary it generates) - see class docs.
         if (headers != null) {
             for (HeaderDto header : headers) {
                 if (header == null) {
@@ -130,6 +142,9 @@ final class CurlCommandBuilder {
                 }
                 String name = header.key() == null ? "" : header.key().trim();
                 if (name.isEmpty() || name.equalsIgnoreCase("Cookie")) {
+                    continue;
+                }
+                if (hasMultipart && name.equalsIgnoreCase("Content-Type")) {
                     continue;
                 }
                 String value = header.value() == null ? "" : header.value();
@@ -142,10 +157,28 @@ final class CurlCommandBuilder {
             a.add("Cookie: " + cookieHeaderValue);
         }
 
-        // Request body: always from a file, so it is binary-safe and never hits
-        // the OS command-line length limit. --data-binary sends it verbatim
-        // (the closest match to Chrome's --data-raw). Skipped for HEAD.
-        if (!isHead && dataFilePath != null) {
+        // Request body. Skipped for HEAD.
+        if (!isHead && hasMultipart) {
+            // curl builds the multipart body itself: boundary, Content-Length,
+            // per-part encoding and streaming the file straight off disk. Text
+            // fields go through --form-string so a value starting with '@' or
+            // '<' is never misread as curl's own file/read-from-file syntax.
+            for (MultipartFieldDto field : multipart) {
+                if (field == null || field.name() == null || field.name().isBlank()) {
+                    continue;
+                }
+                if (field.isFile()) {
+                    a.add("-F");
+                    a.add(MultipartFormValue.forExecFile(field.name(), field.value(), field.contentType()));
+                } else {
+                    a.add("--form-string");
+                    a.add(MultipartFormValue.forText(field.name(), field.value()));
+                }
+            }
+        } else if (!isHead && dataFilePath != null) {
+            // Always from a file, so it is binary-safe and never hits the OS
+            // command-line length limit. --data-binary sends it verbatim (the
+            // closest match to Chrome's --data-raw / a raw binary-file upload).
             a.add("--data-binary");
             a.add("@" + dataFilePath);
         }
