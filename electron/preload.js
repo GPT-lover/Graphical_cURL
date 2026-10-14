@@ -24,9 +24,9 @@ const api = {
   isDesktop: true,
   // Open a URL in the user's real browser instead of navigating the app window.
   openExternal: (url) => ipcRenderer.invoke('curl-gui:open-external', String(url)),
-  // Native "Browse" file picker (used by the Hydra tool for the executable and
-  // wordlist paths, and by the request editor for multipart/binary file
-  // fields). Resolves to the chosen absolute path, or null if cancelled.
+  // Native "Browse" file picker (used by the request editor for multipart/
+  // binary file fields). Resolves to the chosen absolute path, or null if
+  // cancelled.
   pickFile: (options) => ipcRenderer.invoke('curl-gui:pick-file', options || {}),
   // Best-effort local existence check for a multipart/binary file field, so a
   // moved/deleted file can be flagged in the editor before Send is even

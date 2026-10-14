@@ -21,7 +21,6 @@ import EnvironmentBar from './EnvironmentBar.jsx'
  *   onAddToChain     - () add the current request to the request chain
  *   onOpenChain      - () open the "Request Chain" dialog
  *   chainStepCount   - number of requests currently in the chain (badge)
- *   onOpenHydra      - () open the "Hydra" tool dialog
  *   savedRequestName - name of the loaded saved request, or null if unsaved
  *   onNewRequest     - () clear the editor + the saved-request selection
  *   onSave           - () open the Save dialog (create a new saved request)
@@ -42,7 +41,6 @@ export default function RequestEditor({
   onAddToChain,
   onOpenChain,
   chainStepCount,
-  onOpenHydra,
   savedRequestName,
   onNewRequest,
   onSave,
@@ -141,9 +139,6 @@ export default function RequestEditor({
         </button>
         <button type="button" className="btn" onClick={() => onExport(request)}>
           Copy as cURL
-        </button>
-        <button type="button" className="btn" onClick={onOpenHydra}>
-          Hydra
         </button>
       </div>
 

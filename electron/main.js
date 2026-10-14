@@ -239,8 +239,8 @@ function wireLifecycle() {
     return false
   })
 
-  // Native "Browse" file picker for the Hydra tool and multipart/binary file
-  // fields. Returns the chosen absolute path, or null if the user cancelled.
+  // Native "Browse" file picker for multipart/binary file fields. Returns the
+  // chosen absolute path, or null if the user cancelled.
   ipcMain.handle('curl-gui:pick-file', async (_evt, options) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: (options && options.title) || 'Select a file',
