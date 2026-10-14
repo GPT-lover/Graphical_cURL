@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import MultipartFormEditor, { FilePathPicker } from './MultipartFormEditor.jsx'
+import Base64Modal from './Base64Modal.jsx'
 
 const BODY_PLACEHOLDER = `{
   "name": "Alex",
@@ -31,6 +33,9 @@ const BODY_TYPES = [
  *   onBodyTypeChange - (newType) => void
  *   multipart    - [{ id, type, name, value, contentType }]
  *   onAddMultipartField / onRemoveMultipartField / onUpdateMultipartField
+ *
+ * The header's "Base64" button opens a standalone encode/decode scratchpad
+ * (Base64Modal) - it never reads or writes the body itself.
  */
 export default function BodyEditor({
   value,
@@ -42,11 +47,25 @@ export default function BodyEditor({
   onRemoveMultipartField,
   onUpdateMultipartField,
 }) {
+  const [base64ModalOpen, setBase64ModalOpen] = useState(false)
+
   return (
     <section className="panel">
       <div className="panel__header">
         <h2 className="panel__title">Body</h2>
+        <div className="panel__actions">
+          <button
+            type="button"
+            className="btn btn--tiny"
+            onClick={() => setBase64ModalOpen(true)}
+            title="Open the Base64 encode/decode tool"
+          >
+            Base64
+          </button>
+        </div>
       </div>
+
+      <Base64Modal open={base64ModalOpen} onClose={() => setBase64ModalOpen(false)} />
 
       <div className="body-type-tabs" role="tablist" aria-label="Body type">
         {BODY_TYPES.map((type) => (

@@ -1364,6 +1364,35 @@ code {
   font-size: 0.82rem;
 }
 
+/* ---- Base64 Encode/Decode dialog --------------------------------- */
+
+.base64-modal__mode {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.base64-modal__mode-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+}
+
+.base64-modal__mode-options label {
+  font-size: 0.85rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.base64-modal__textarea {
+  min-height: 110px;
+}
+
 /* ---- Run Multiple dialog --------------------------------- */
 
 .run-mode {
